@@ -301,16 +301,16 @@ export default function App() {
           </CanvasErrorBoundary>
 
           {/* 手順書はキャンバスに重ねる。閲覧モードでも読めるが、
-              常設しないのでフローの幅を削らない */}
+              常設しないのでフローの幅を削らない。
+              置き場所の箱（.doc-dock）は DocPanel 自身が root として描く。幅のドラッグと
+              全画面を SidePanel と同じくパネルの中で完結させるため（styles.css の .doc-dock 参照） */}
           {showDoc && (
-            <div className="doc-dock">
-              <DocPanel
-                step={selectedStep}
-                editable={isEdit}
-                onChange={handleDocChange}
-                onClose={() => setSelectedId(null)}
-              />
-            </div>
+            <DocPanel
+              step={selectedStep}
+              editable={isEdit}
+              onChange={handleDocChange}
+              onClose={() => setSelectedId(null)}
+            />
           )}
 
           {/* 操作の説明は初回だけ。閉じたら二度と出さない */}

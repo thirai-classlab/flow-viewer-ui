@@ -712,29 +712,36 @@ pre {
 }
 
 /* ---- 手順書のドック ----
-   キャンバスに重ねる。常設しないのでフローの幅を削らない。 */
+   キャンバスに重ねる。常設しないのでフローの幅を削らない。
+   この要素は DocPanel の root そのもの（.doc-dock.dp-root）。幅のドラッグと全画面の状態は
+   DocPanel が持ち（SidePanel と同じ形）、幅は inline style、全画面は .full で上書きされる。
+   ここが与えるのは「どこに、既定でどれだけの大きさで置くか」だけ。 */
 .doc-dock {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(420px, 42%);
+  /* 旧 min(420px, 42%) では表が 3 列で折り返し、手順書を読むのに狭かった */
+  width: min(560px, 45%);
+  /* 覚えた幅が今の画面には広すぎても、キャンバスに 320px は残す（DocPanel の MIN_CANVAS と同じ値） */
+  min-width: 320px;
+  max-width: calc(100% - 320px);
   z-index: 6;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
   overflow: hidden;
   background: var(--bg-panel);
   border-left: 1px solid var(--border);
   box-shadow: -12px 0 28px var(--fv-shadow);
   animation: doc-slide-in 160ms ease-out;
 }
-.doc-dock > * {
-  min-height: 0;
-  flex: 1 1 auto;
+/* 全画面。キャンバス（.canvas-wrap）を丸ごと覆う。編集モードの JSON パネルは覆わない */
+.doc-dock.full {
+  left: 0;
+  width: auto;
+  max-width: none;
+  border-left: none;
+  box-shadow: none;
 }
-/* 中身（.dp-*）の見た目は DocPanel 自身が持つ style で完結している。
-   ここが与えるのは「どこに、どれだけの大きさで置くか」だけ。 */
+/* 中身（.dp-*）の見た目は DocPanel 自身が持つ style で完結している。 */
 @keyframes doc-slide-in {
   from {
     transform: translateX(16px);

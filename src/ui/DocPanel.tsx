@@ -11,14 +11,20 @@
  * editable=true のときだけ、編集 / プレビューの切り替えと保存が現れる。
  *
  * 見た目の CSS はこのファイル内に閉じてある（クラス名は dp- 接頭辞）。
- * styles.css は別担当の領域なので、そちらに手を入れずに完結させる意図。
+ * 置き場所（キャンバスの右に重ねる / 既定幅 / 全画面の当て方）だけは
+ * styles.css の .doc-dock が持ち、ここは中身の体裁に専念する。
+ *
+ * 幅のドラッグと全画面の状態はパネル自身が持つ（SidePanel と同じ形）。
+ * 幅を当てる要素（.doc-dock = このパネルの root）とつまみ（.resizer）を
+ * 同じコンポーネントに置かないと、ドラッグ中の幅計算と保存が 2 ファイルに割れるため。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { FlowStep, StepKind } from '../flow/schema'
 import { KIND_COLOR } from '../flow/theme'
 import { renderMarkdown } from './markdown'
+import { clampWidth, parseStoredWidth } from './doc-panel-width'
 
 type Props = {
   /** 選択中のステップ。null なら何も描かない */
@@ -64,6 +70,31 @@ const DOC_TEMPLATE = [
   '- ',
   '',
 ].join('\n')
+
+/*
+ * パネル幅の下限・キャンバスに残す最低幅・クランプは doc-panel-width.ts（SidePanel と同じ考え方）。
+ * 既定幅は数値で持たず styles.css の .doc-dock（min(560px, 45%)）に任せる。
+ * ドラッグで決めた幅だけを数値で持ち、覚えておく。
+ */
+/** ドラッグで決めた幅を覚えておく鍵（App.tsx の HINT_KEY / THEME_KEY と同じ流儀） */
+const WIDTH_KEY = 'flow-viewer:doc-width'
+
+/** 前回ドラッグで決めた幅。無い / 壊れている / 下限未満 なら null（= CSS の既定幅） */
+function loadWidth(): number | null {
+  try {
+    return parseStoredWidth(localStorage.getItem(WIDTH_KEY))
+  } catch {
+    return null
+  }
+}
+
+function saveWidth(width: number): void {
+  try {
+    localStorage.setItem(WIDTH_KEY, String(Math.round(width)))
+  } catch {
+    // 覚えられなくても次回は既定幅に戻るだけなので、失敗は無視してよい
+  }
+}
 
 /*
  * 注意: このファイルからコンポーネント以外を export しないこと。
@@ -156,6 +187,40 @@ export function DocPanel({ step, editable, onChange, onClose }: Props) {
     setDirty(true)
   }, [])
 
+  /*
+   * 幅と全画面。null の幅は「CSS の既定幅のまま」で、ドラッグして初めて数値になる。
+   * root（.doc-dock）は canvas-wrap の右端に貼り付いているので、
+   * 幅 = 親の右端 − ポインタ x。SidePanel は window の右端で計っているが、
+   * 編集モードでは右に JSON パネルが居て window の右端とは一致しないため、親で計る。
+   */
+  const rootRef = useRef<HTMLElement>(null)
+  const [width, setWidth] = useState<number | null>(loadWidth)
+  const [full, setFull] = useState(false)
+  const dragging = useRef(false)
+  // pointerup で保存するとき、レンダー時点の値ではなく最新値を読むための控え
+  const widthRef = useRef(width)
+  widthRef.current = width
+
+  const onResizeDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragging.current = true
+  }, [])
+
+  const onResizeMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return
+    const wrap = rootRef.current?.parentElement
+    const right = wrap ? wrap.getBoundingClientRect().right : window.innerWidth
+    const wrapWidth = wrap ? wrap.clientWidth : window.innerWidth
+    setWidth(clampWidth(right - e.clientX, wrapWidth))
+  }, [])
+
+  const onResizeUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    dragging.current = false
+    e.currentTarget.releasePointerCapture(e.pointerId)
+    // 保存は move ごとではなく離したときの 1 回だけ
+    if (widthRef.current !== null) saveWidth(widthRef.current)
+  }, [])
+
   // 編集できないときは常に確定済みの内容を、編集できるときは下書きを描く
   const source = editable ? draft : stepDoc
   const html = useMemo(() => renderMarkdown(source), [source])
@@ -168,10 +233,29 @@ export function DocPanel({ step, editable, onChange, onClose }: Props) {
   const metas = META_FIELDS.filter((f) => step.meta?.[f.key])
 
   return (
-    <section className="dp-root" aria-label="ノードの手順書">
+    <section
+      ref={rootRef}
+      className={`doc-dock dp-root${full ? ' full' : ''}`}
+      style={full || width === null ? undefined : { width }}
+      aria-label="ノードの手順書"
+    >
       <style href="flow-viewer-doc-panel" precedence="default">
         {DOC_PANEL_CSS}
       </style>
+
+      {/* 全画面のときは掴む縁が無い（キャンバスを覆っているので動かす意味も無い）。
+          .resizer の見た目は styles.css（SidePanel と共用） */}
+      {!full && (
+        <div
+          className="resizer"
+          onPointerDown={onResizeDown}
+          onPointerMove={onResizeMove}
+          onPointerUp={onResizeUp}
+          role="separator"
+          aria-orientation="vertical"
+          title="ドラッグで幅を変える"
+        />
+      )}
 
       <header className="dp-head">
         <div className="dp-head-row">
@@ -193,6 +277,15 @@ export function DocPanel({ step, editable, onChange, onClose }: Props) {
               </button>
             </div>
           )}
+          <button
+            type="button"
+            className="dp-full"
+            data-active={full}
+            onClick={() => setFull((v) => !v)}
+            title="手順書をキャンバス全体へ広げる"
+          >
+            {full ? '戻す' : '全画面'}
+          </button>
           <button type="button" className="dp-close" onClick={onClose} title="閉じる（選択を解除）">
             ×
           </button>
@@ -256,8 +349,12 @@ export function DocPanel({ step, editable, onChange, onClose }: Props) {
         /*
          * renderMarkdown が marked → DOMPurify を通した文字列しか返さないので、
          * ここで innerHTML に入れてよい。他の経路から HTML を流し込まないこと。
+         * スクロールする箱（.dp-body）と本文の列（.markdown-body）を分けているのは、
+         * 全画面で本文幅を 880px に止めたときもスクロールバーをパネルの縁に残すため。
          */
-        <div className="dp-body markdown-body" dangerouslySetInnerHTML={{ __html: html }} />
+        <div className="dp-body">
+          <div className="markdown-body" dangerouslySetInnerHTML={{ __html: html }} />
+        </div>
       ) : (
         <div className="dp-empty">
           <p>ドキュメントはまだありません。</p>
@@ -334,7 +431,8 @@ const DOC_PANEL_CSS = `
   overflow-wrap: anywhere;
 }
 .dp-modes { display: flex; gap: 4px; }
-.dp-modes button { padding: 4px 9px; font-size: 12px; }
+.dp-modes button,
+.dp-full { padding: 4px 9px; font-size: 12px; white-space: nowrap; }
 .dp-close {
   padding: 2px 9px;
   font-size: 15px;
@@ -364,14 +462,16 @@ const DOC_PANEL_CSS = `
   line-height: 1.6;
 }
 
-/* ---- 本文 ---- */
+/* ---- 本文 ----
+   .dp-body はスクロールする箱、.markdown-body はその中の本文の列。
+   余白は mdv（24px 40px）を狭いパネル向けに詰め、全画面では mdv と同じ値に戻す */
 .dp-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 14px 16px 28px;
-  line-height: 1.85;
+  padding: 20px 28px 32px;
 }
+.dp-root.full .dp-body { padding: 24px 40px 40px; }
 .dp-empty {
   flex: 1 1 auto;
   display: flex;
@@ -436,7 +536,22 @@ const DOC_PANEL_CSS = `
 
 /* ---- Markdown 本体 ----
    業務手順書で実際に使う記法（見出し・番号付き手順・表・引用・
-   チェックリスト・コード）が全部読める体裁になっていること。 */
+   チェックリスト・コード）が全部読める体裁になっていること。
+   寸法は mdv（markdownviewer2.0 の doc-preview.tsx の markdownStyles）に合わせ、
+   色は hex を写さず styles.css のトークン（--text / --border / --accent …）へ写像している。
+   mdv はライトしか無いので、ダークは同じトークンの読み替えで成立させる。
+   ライトで 4.5:1 に届かない組み合わせだけ [data-theme='dark'] で個別に直す。 */
+.markdown-body {
+  font-size: 14px;
+  line-height: 1.75;
+}
+/* 全画面では 1 行が長くなりすぎて目が戻れないので、本文の幅を 880px で止めて中央に置く。
+   編集用の textarea も同じ幅に揃える（書いている行の長さ = 読む行の長さ） */
+.dp-root.full .markdown-body,
+.dp-root.full .dp-editor {
+  max-width: 880px;
+  margin: 0 auto;
+}
 .markdown-body > :first-child { margin-top: 0; }
 .markdown-body > :last-child { margin-bottom: 0; }
 .markdown-body h1,
@@ -448,99 +563,131 @@ const DOC_PANEL_CSS = `
   margin: 1.5em 0 0.5em;
   line-height: 1.4;
   font-weight: 600;
+  color: var(--text, #dfe4f0);
 }
-.markdown-body h1 { font-size: 18px; }
-.markdown-body h2 {
-  font-size: 15px;
-  padding-bottom: 4px;
+.markdown-body h1 {
+  font-size: 2em;
+  padding-bottom: 0.3em;
   border-bottom: 1px solid var(--border, #2c3242);
 }
-.markdown-body h3 { font-size: 13.5px; color: var(--accent, #6b8afd); }
+.markdown-body h2 {
+  font-size: 1.5em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border, #2c3242);
+}
+.markdown-body h3 { font-size: 1.25em; }
 .markdown-body h4,
 .markdown-body h5,
-.markdown-body h6 { font-size: 13px; color: var(--text-dim, #8d97ad); }
-.markdown-body p { margin: 0 0 0.9em; }
+.markdown-body h6 { font-size: 1em; }
+.markdown-body p { margin: 0 0 1em; }
 .markdown-body ul,
-.markdown-body ol { margin: 0 0 0.9em; padding-left: 1.5em; }
+.markdown-body ol { margin: 0 0 1em; padding-left: 2em; }
 .markdown-body li { margin-bottom: 0.25em; }
 .markdown-body li > ul,
 .markdown-body li > ol { margin: 0.25em 0 0; }
 /* チェックリスト（- [ ] 記法）。中黒とチェックボックスが二重に出ると読みにくいので
-   マーカーを消し、その分だけ左へ寄せて他の箇条書きと行頭を揃える */
+   マーカーを消し、その分だけ左へ寄せて他の箇条書きと行頭を揃える
+   （mdv の .task-list-item と同じ寄せ幅。marked は class を付けないので :has で拾う） */
 .markdown-body li:has(> input[type='checkbox']) {
   list-style: none;
-  margin-left: -1.3em;
+  margin-left: -1.5em;
 }
 .markdown-body li input[type='checkbox'] {
-  margin-right: 7px;
+  margin-right: 0.5em;
   accent-color: var(--accent, #6b8afd);
   vertical-align: -1px;
 }
 .markdown-body hr {
-  border: none;
-  border-top: 1px solid var(--border, #2c3242);
-  margin: 1.4em 0;
+  height: 0.25em;
+  margin: 2em 0;
+  background: var(--border, #2c3242);
+  border: 0;
+  border-radius: 2px;
 }
 .markdown-body a {
   color: var(--accent, #6b8afd);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration: none;
   overflow-wrap: anywhere;
 }
-.markdown-body strong { font-weight: 700; color: var(--text, #dfe4f0); }
-.markdown-body code {
-  background: var(--bg-raised, #1f2430);
-  border: 1px solid var(--border, #2c3242);
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 0.92em;
+.markdown-body a:hover { text-decoration: underline; }
+.markdown-body strong { font-weight: 600; color: var(--text, #dfe4f0); }
+.markdown-body em { color: var(--text-dim, #8d97ad); }
+/* 行内コード。mdv の「アクセントの薄い地 + アクセント文字」を --hl（強調の地）で写す。
+   ダークの --hl × --accent は 3.5:1 で読めないので、文字だけ --text にする */
+.markdown-body :not(pre) > code {
+  padding: 0.2em 0.4em;
+  font-size: 85%;
+  background: var(--hl, #2f3a63);
+  color: var(--accent, #6b8afd);
+  border-radius: 6px;
   overflow-wrap: anywhere;
 }
+[data-theme='dark'] .markdown-body :not(pre) > code { color: var(--text, #dfe4f0); }
+/* コードブロック。mdv は常にダーク地だが、ここは両テーマとも地色 + 枠にする
+   （ダークの中に更に暗い箱を作れないため。ライトも同じ組み方にして揃える） */
 .markdown-body pre {
-  margin: 0 0 1em;
-  padding: 10px 12px;
+  margin: 1em 0;
+  padding: 1em;
   background: var(--bg, #12141c);
   border: 1px solid var(--border, #2c3242);
-  border-radius: 6px;
-  overflow-x: auto;
-  line-height: 1.6;
+  border-radius: 8px;
+  font-size: 85%;
+  line-height: 1.5;
+  overflow: auto;
 }
+/* 長い行は折り返す（mdv globals.css と同じ）。パネルが狭いので横スクロールより読める */
 .markdown-body pre code {
-  background: none;
-  border: none;
+  display: block;
   padding: 0;
-  white-space: pre;
+  background: none;
+  color: inherit;
+  /* styles.css の code { font-size: 12px } に負けて pre の 85% とずれるので、pre から継承させる */
+  font-size: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .markdown-body blockquote {
-  margin: 0 0 1em;
-  padding: 6px 12px;
-  border-left: 3px solid var(--warn, #c9a94e);
-  background: rgba(201, 169, 78, 0.08);
-  color: var(--text, #dfe4f0);
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  color: var(--text-dim, #8d97ad);
+  border-left: 0.25em solid var(--border, #2c3242);
+  background: var(--bg, #12141c);
+  border-radius: 0 4px 4px 0;
 }
+.markdown-body blockquote > :first-child { margin-top: 0; }
 .markdown-body blockquote > :last-child { margin-bottom: 0; }
 
-/* 表は横に伸びがちなので、パネルではなく表自身をスクロールさせる */
+/* 表は横に伸びがちなので、パネルではなく表自身をスクロールさせる。
+   display:block のため中身は内容幅で決まり、width:100% は箱の外形にしか効かない（mdv も同じ組み方） */
 .markdown-body table {
   display: block;
+  width: 100%;
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
-  margin: 0 0 1em;
-  font-size: 12px;
+  border-spacing: 0;
+  margin: 1em 0;
+  font-size: 13px;
 }
 .markdown-body th,
 .markdown-body td {
   border: 1px solid var(--border, #2c3242);
-  padding: 5px 9px;
-  text-align: left;
+  padding: 0.5em 1em;
   vertical-align: top;
   line-height: 1.6;
 }
+/* GFM の :---: は align 属性で来る。CSS で text-align を決め打ちすると潰れるので、属性の無い th だけ左寄せ */
+.markdown-body th:not([align]) { text-align: left; }
 .markdown-body th {
   background: var(--bg-raised, #1f2430);
-  white-space: nowrap;
   font-weight: 600;
+  color: var(--text, #dfe4f0);
 }
-.markdown-body img { max-width: 100%; height: auto; }
+.markdown-body tbody tr:nth-child(2n) { background: var(--bg, #12141c); }
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border, #2c3242);
+}
 `
