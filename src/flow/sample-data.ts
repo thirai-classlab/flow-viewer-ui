@@ -652,8 +652,9 @@ CRM の \`差戻理由\` を必ず埋めること。埋まっていないと受�
     { from: 'task-notify', to: 'end' },
 
     // --- グループをまたぐ例外遷移 ---
-    // 審査結果 → 受付部門への差し戻し（トップの decision から 2 階層下へ）
-    { from: 'dec-screening', to: 'task-identity', label: '不備あり', kind: 'loopback' },
+    // 審査結果 → 受付部門への差し戻し（トップの decision から 2 階層下へ）。
+    // 中の「不備あり」（dec-docs → 審査結果）と同じ文言にすると左ペインで 2 つ並んで読めないので、行為の名前にする
+    { from: 'dec-screening', to: 'task-identity', label: '差し戻し', kind: 'loopback' },
     // 重複検出 → 完了通知へ直行（部門を 3 つ飛ばす）
     { from: 'dec-dup', to: 'task-notify', label: '重複', kind: 'exception' },
     // 与信 NG → 謝絶（トップの decision から終端へ）
