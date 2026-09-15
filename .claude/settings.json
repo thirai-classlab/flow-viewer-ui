@@ -1,0 +1,31 @@
+{
+  "enabledPlugins": {
+    "hirai-lite@hirai-lite": true
+  },
+  "ultracode": true,
+  "workflowSizeGuideline": "small",
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/statusline.sh\""
+  },
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git branch -D:*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)"
+    ],
+    "ask": [
+      "Bash(git push origin main:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(vercel --prod:*)",
+      "Bash(supabase db push:*)",
+      "Bash(terraform apply:*)",
+      "Bash(kubectl delete:*)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./.claude/rules/**)"
+    ]
+  }
+}

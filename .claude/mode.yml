@@ -1,0 +1,32 @@
+# mode（進め方）の設定 (ここが正) — 値は normal か loop の 2 つだけ
+#
+#   normal（確認あり）  : 重要な分かれ道でひとこと聞いてから進む (最初はこちら)
+#   loop（自動で進む）  : 確認を求めず最後まで進む。止めたいときは「stop」と伝える。
+#                         止まるのは 3 つだけ — 「stop」と言われた /
+#                         やることが終わった / 続けられないエラーが出た。
+#                         ただし「新しい設計を足す」「決めた内容を変える」
+#                         「元に戻せない操作」は loop のときでも必ず確認する。
+#
+# 切り替え : /hirai-lite:config （設定の一覧から mode（進め方）を変えるとこのファイルが書き換わる）
+# 一時的に : 環境変数 HC_MODE=loop (このファイルより優先される)
+# 置き場所 : 導入先リポジトリの .claude/mode.yml (/init が置く)
+# 読む人   : プラグインの hooks/session-start.sh と scripts/statusline.sh
+
+mode: normal
+
+# auto_sync（更新後の入れ替え） — 値は on か off の 2 つだけ。**既定は off。**
+#
+#   off : 何もしない。更新は /hirai-lite:update で自分のタイミングで行う (最初はこちら)
+#   on  : プラグインの版が変わった回のセッション冒頭だけ、/init が導入先へ複製した
+#         3 本 (statusline.sh / tasks-path.sh / context-usage.sh) を配布版に揃え、
+#         何件入れ替えたかを 1 行報告する。中身が違うものは .bak に控えてから入れ替える。
+#         決まりごと (rules) ・安全設定 (settings.json) ・CLAUDE.md ・やることの一覧表は
+#         **自動では一切書き換えない。** 版が同じ回は何もしない。
+#
+# 切り替え : /hirai-lite:config の項目 7
+# 一時的に : 環境変数 HC_AUTO_SYNC=off (このファイルより優先される)
+#
+# プラグイン本体そのものの自動更新は **Claude Code 本体の機能**でここでは扱わない
+# (/plugin → Marketplaces → Enable auto-update。第三者マーケットプレイスは既定 off)。
+
+auto_sync: off
