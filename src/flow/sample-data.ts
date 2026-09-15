@@ -321,6 +321,22 @@ CRM の \`差戻理由\` を必ず埋めること。埋まっていないと受�
     },
 
     {
+      id: 'dec-screening',
+      label: '審査結果',
+      kind: 'decision',
+      meta: { note: '部門レベルの分岐。与信・書類の判定を受けて 手配 / 差し戻し / 謝絶 に振り分ける' },
+      doc: `# 審査結果
+
+審査部門の 2 つの判定（与信 OK か / 不備なしか）を受けて、案件の行き先を 1 か所で決める。
+
+| 判定 | 行き先 |
+| --- | --- |
+| OK | 手配部門（4 社への申込を並列に開始） |
+| 不備あり | 受付部門の本人確認へ差し戻し |
+| NG | 謝絶（与信 NG） |`,
+    },
+
+    {
       id: 'dept-arrange',
       label: '手配部門',
       kind: 'group',
@@ -534,11 +550,44 @@ CRM の \`差戻理由\` を必ず埋めること。埋まっていないと受�
 現地要因（元栓が閉じているだけ等）はその場で解消する。**再手配しない。**`,
         },
         {
-          id: 'task-notify',
-          label: '完了通知',
+          id: 'task-record',
+          label: '試験結果の記録',
           kind: 'task',
-          meta: { system: 'メール / LINE' },
-          doc: `## 通知に必ず含めるもの
+          meta: { system: '開通管理台帳' },
+          doc: `## 記録する項目
+
+| 項目 | 内容 |
+| --- | --- |
+| 4 種の開通可否 | 電気 / ガス / 水道 / ネット それぞれ OK / NG |
+| NG の要因 | 現地要因（元栓・ONU 等）か、供給側の未開通か |
+| 立会い者 | 顧客本人か代理人か |
+
+要因が供給側なら**品質確認で「不通」に倒し、手配部門へ差し戻す**。現地要因はその場で解消し OK として記録する。`,
+        },
+      ],
+    },
+
+    {
+      id: 'dec-qa',
+      label: '品質確認',
+      kind: 'decision',
+      meta: { note: '部門レベルの分岐。開通試験の結果で 完了通知 に進むか 手配部門 へ差し戻すか' },
+      doc: `# 品質確認
+
+開通確認の記録を見て、案件を閉じてよいか決める。
+
+| 判定 | 行き先 |
+| --- | --- |
+| OK | 完了通知 |
+| 不通 | 手配部門の工事手配へ差し戻し（供給側の未開通） |`,
+    },
+
+    {
+      id: 'task-notify',
+      label: '完了通知',
+      kind: 'task',
+      meta: { system: 'メール / LINE' },
+      doc: `## 通知に必ず含めるもの
 
 1. 開通した 4 種それぞれの**契約番号**と**お客様番号**
 2. 各社の問い合わせ窓口（当社ではなく供給側の番号）
@@ -559,8 +608,6 @@ CRM の \`差戻理由\` を必ず埋めること。埋まっていないと受�
   今回の申込は取り下げた」旨に文面を差し替える。開通の文面を送らない
 - 契約番号は顧客が後から各社に問い合わせる唯一の手がかり。
   1 つでも欠けたまま送らないこと`,
-        },
-      ],
     },
 
     { id: 'end', label: '完了', kind: 'end' },
@@ -579,12 +626,19 @@ CRM の \`差戻理由\` を必ず埋めること。埋まっていないと受�
     { from: 'dec-credit', to: 'task-docs-receive', label: 'OK' },
     { from: 'task-docs-receive', to: 'dec-docs' },
 
+    // --- 部門の判定はトップ階層の decision「審査結果」に集める ---
+    // 中の decision（与信 OK か / 不備なしか）はそのまま残し、出口だけを審査結果へ向ける。
+    // 不備あり / NG は kind を分けて、書類審査の階層で 2 本の線が「2 件」に束ねられないようにする
+    { from: 'dec-docs', to: 'dec-screening', label: '不備なし' },
+    { from: 'dec-docs', to: 'dec-screening', label: '不備あり', kind: 'loopback' },
+    { from: 'dec-credit', to: 'dec-screening', label: 'NG', kind: 'exception' },
+
     // --- 4 社への並列申込。全部が同じ後続（日程調整）に合流する ---
     // hasUniformExternalConnectivity が true になる形
-    { from: 'dec-docs', to: 'task-apply-power', label: '不備なし' },
-    { from: 'dec-docs', to: 'task-apply-gas', label: '不備なし' },
-    { from: 'dec-docs', to: 'task-apply-water', label: '不備なし' },
-    { from: 'dec-docs', to: 'task-apply-net', label: '不備なし' },
+    { from: 'dec-screening', to: 'task-apply-power', label: 'OK' },
+    { from: 'dec-screening', to: 'task-apply-gas', label: 'OK' },
+    { from: 'dec-screening', to: 'task-apply-water', label: 'OK' },
+    { from: 'dec-screening', to: 'task-apply-net', label: 'OK' },
     { from: 'task-apply-power', to: 'task-schedule' },
     { from: 'task-apply-gas', to: 'task-schedule' },
     { from: 'task-apply-water', to: 'task-schedule' },
@@ -592,24 +646,21 @@ CRM の \`差戻理由\` を必ず埋めること。埋まっていないと受�
 
     { from: 'task-schedule', to: 'task-dispatch' },
     { from: 'task-dispatch', to: 'task-confirm' },
-    { from: 'task-confirm', to: 'task-notify' },
+    { from: 'task-confirm', to: 'task-record' },
+    { from: 'task-record', to: 'dec-qa' },
+    { from: 'dec-qa', to: 'task-notify', label: 'OK' },
     { from: 'task-notify', to: 'end' },
 
-    // --- グループをまたぐ例外遷移。ここが dagre を壊す ---
-    // 審査部門 → 受付部門への差し戻し（2 階層またぎ）
-    {
-      from: 'dec-docs',
-      to: 'task-identity',
-      label: '不備あり',
-      kind: 'loopback',
-    },
-    // 重複検出 → 品質管理へ直行（部門を 2 つ飛ばす）
+    // --- グループをまたぐ例外遷移 ---
+    // 審査結果 → 受付部門への差し戻し（トップの decision から 2 階層下へ）
+    { from: 'dec-screening', to: 'task-identity', label: '不備あり', kind: 'loopback' },
+    // 重複検出 → 完了通知へ直行（部門を 3 つ飛ばす）
     { from: 'dec-dup', to: 'task-notify', label: '重複', kind: 'exception' },
-    // 与信 NG → 謝絶（グループ外の終端へ）
-    { from: 'dec-credit', to: 'end-reject', label: 'NG', kind: 'exception' },
+    // 与信 NG → 謝絶（トップの decision から終端へ）
+    { from: 'dec-screening', to: 'end-reject', label: 'NG', kind: 'exception' },
     // 工事不可 → 日程調整へ差し戻し（同一グループ内で完結するループ）
     { from: 'task-dispatch', to: 'task-schedule', label: '再調整', kind: 'loopback' },
-    // 開通確認 NG → 手配部門の工事手配へ差し戻し（グループまたぎ）
-    { from: 'task-confirm', to: 'task-dispatch', label: '不通', kind: 'loopback' },
+    // 品質確認 NG → 手配部門の工事手配へ差し戻し（トップの decision から 2 階層下へ）
+    { from: 'dec-qa', to: 'task-dispatch', label: '不通', kind: 'loopback' },
   ],
 }
