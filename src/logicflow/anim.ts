@@ -214,12 +214,32 @@ export function applyViewport(lf: LogicFlow, vp: Viewport) {
 }
 
 /**
+ * 描画結果 w×h をキャンバス cw×ch に「収める」縮尺（上限 maxScale だけ効かせた生の値）。
+ * nested の自動抽象化は、この値が FIT.minReadable を割るかどうかで畳む深さを決める。
+ */
+export function fitScale(
+  w: number,
+  h: number,
+  cw: number,
+  ch: number,
+  pad = FIT_PADDING,
+  maxScale = FIT.maxScale,
+): number {
+  return Math.min(maxScale, (cw - pad) / Math.max(w, 1), (ch - pad) / Math.max(h, 1))
+}
+
+/**
  * 描画結果 w×h をキャンバス cw×ch に収める。
  *
  * 旧実装は Math.min(1, ...) で 1.0 に頭打ちしていた。そのため
  * 「ノードが少ない階層ほどキャンバスが空く」という逆転が起きていたので、
- * 上限を FIT.maxScale（既定 1.75）まで開けてある。maxScale を呼び出し側で
+ * 上限を FIT.maxScale まで開けてある。maxScale を呼び出し側で
  * 下げられるようにしてあるのは、split の細いペインで拡大しすぎないため。
+ *
+ * 下限（#15）: 収める縮尺が minScale（既定 FIT.minReadable = 0.85）を割るならそこで止める。
+ * 止めた結果はみ出す軸は開始側（左 / 上）に pad/2 で寄せ、収まる軸は従来どおり中央。
+ * はみ出したぶんはホイール / ドラッグのパンに任せる。
+ * 「全体を表示」と split の左ペインは minScale に FIT.minScale を渡して下限を外す。
  */
 export function fitViewport(
   w: number,
@@ -228,10 +248,39 @@ export function fitViewport(
   ch: number,
   pad = FIT_PADDING,
   maxScale = FIT.maxScale,
+  minScale: number = FIT.minReadable,
 ): Viewport {
-  const raw = Math.min(maxScale, (cw - pad) / Math.max(w, 1), (ch - pad) / Math.max(h, 1))
-  const scale = clampScale(raw)
-  return { scale, tx: (cw - w * scale) / 2, ty: (ch - h * scale) / 2 }
+  const scale = clampScale(Math.max(minScale, fitScale(w, h, cw, ch, pad, maxScale)))
+  // 0.5px は浮動小数の丸め。下限を使わなかったときは両軸とも必ずこちら（中央）になる
+  const fitsW = w * scale <= cw - pad + 0.5
+  const fitsH = h * scale <= ch - pad + 0.5
+  return {
+    scale,
+    tx: fitsW ? (cw - w * scale) / 2 : pad / 2,
+    ty: fitsH ? (ch - h * scale) / 2 : pad / 2,
+  }
+}
+
+/**
+ * 描画済みのビューポートから vp へ移す（「全体を表示」用）。
+ * animate なら VIEW_ANIM_CLASS の CSS transition で補間する。直前の状態は既にペイント済みなので、
+ * 描画直後の遷移で使っている 2 段 rAF は要らない（class 付与と transform 変更が同じフレームでよい）。
+ * 外す timer は呼び出し側の timers に積み、effect の cleanup で確実に止める。
+ */
+export function transitionViewport(
+  lf: LogicFlow,
+  wrap: HTMLElement,
+  vp: Viewport,
+  animate: boolean,
+  timers: number[],
+) {
+  if (!animate) {
+    applyViewport(lf, vp)
+    return
+  }
+  wrap.classList.add(VIEW_ANIM_CLASS)
+  applyViewport(lf, vp)
+  timers.push(window.setTimeout(() => wrap.classList.remove(VIEW_ANIM_CLASS), ANIM.drill + 80))
 }
 
 /** キャンバス中心を固定したままスケールだけ変える。ズームイン/アウト演出の始点に使う */

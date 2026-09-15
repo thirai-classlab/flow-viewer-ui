@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlowCanvas } from './logicflow'
-import type { Theme, ViewMode } from './flow/view-props'
+import type { FlowViewerHandle, Theme, ViewMode } from './flow/view-props'
 import { DEFAULT_THEME } from './flow/view-props'
 import type { CollapseState, Direction, FlowDoc, FlowStep } from './flow/schema'
 import { flattenDoc } from './flow/flatten'
@@ -85,6 +85,8 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(loadTheme)
   // 選択中のノード。ドリルダウンとは別概念で、選んでも表示階層は変わらない
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // キャンバスへの命令（「全体を表示」）。状態ではなく一度きりの操作なので ref で渡す
+  const canvasRef = useRef<FlowViewerHandle | null>(null)
 
   // 操作説明は文字で常設せず、初回だけ出して閉じられるようにする
   const [hintOpen, setHintOpen] = useState(() => {
@@ -179,6 +181,13 @@ export default function App() {
 
   const handleExpandAll = useCallback(() => setCollapsed(new Set()), [])
 
+  /* nested の初期表示で、読める縮尺を割る深さをキャンバス側が選んで渡してくる（#15）。
+     既存の collapsed に載せるだけなので、以降の展開 / 折りたたみは通常どおりユーザーが決める。
+     データ選択（handleDataSel）で collapsed が空に戻るので、次のデータでは再び自動で畳まれる。 */
+  const handleAutoCollapse = useCallback((ids: string[]) => setCollapsed(new Set(ids)), [])
+
+  const handleFitAll = useCallback(() => canvasRef.current?.fitAll(), [])
+
   const handleDrillDown = useCallback((id: string | null) => {
     setDrillRoot((cur) => {
       setPrevDrillRoot(cur) // 遷移の向きを判定するため直前値を残す
@@ -251,6 +260,7 @@ export default function App() {
         onAnimate={setAnimate}
         nestPath={nestPath}
         onNestPath={setNestPath}
+        onFitAll={handleFitAll}
         sideOpen={sideOpen}
         onToggleSide={() => setSideOpen((v) => !v)}
         theme={theme}
@@ -283,11 +293,13 @@ export default function App() {
                 手順書パネルは重ねて出すのでここには影響しない。 */}
             <FlowCanvas
               key={isEdit && sideOpen ? 'narrow' : 'wide'}
+              ref={canvasRef}
               doc={doc}
               flat={flat}
               viewMode={viewMode}
               collapsed={safeCollapsed}
               onToggleCollapse={handleToggleCollapse}
+              onAutoCollapse={handleAutoCollapse}
               direction={direction}
               drillRoot={safeDrillRoot}
               onDrillDown={handleDrillDown}

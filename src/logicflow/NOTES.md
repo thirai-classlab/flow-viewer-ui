@@ -202,6 +202,19 @@ direction=RIGHT のまま並べると横 1360 × 縦 140 のような極端な�
 split のペインは別枠で、左（現在地の見取り図）は 1.0 に据え置き
 — 上の「5 階層の実測」がこの上限を前提にしているため — 右（今いる階層の中身）は 1.25。
 
+### 下限は 0.85 で止め、はみ出しはパン（#15）
+
+折り返し廃止（#13）で sample3 のトップが 1440x900 で縮尺 0.51、nested の全展開が 0.25 まで縮んだ。
+`FIT.minReadable = 0.85`（13px × 0.85 ≒ 11px）で止め、収まらない軸は開始側（左 / 上）に `pad/2` で寄せる
+（`fitViewport()` の minScale 引数。split の左ペインと「全体を表示」（`FlowViewerHandle.fitAll`）は `FIT.minScale` を渡して下限なし）。
+nested は初期表示で `pickAutoCollapse()` が「深さ ≥ d を全部畳む」候補を深い側から試し、生の縮尺が 0.85 に届く最初の d を
+collapsed に載せる（sample3 は全部畳んでも 0.53 なので d = 0 + 下限、sample5 は d = 0 で 1.02）。
+
+パン / ズームは LogicFlow の既定（`isSilentMode` でも `stopScrollGraph` / `stopZoomGraph` / `stopMoveGraph` は false、`EditConfigModel.js`）のまま:
+**空白のドラッグ = パン、ホイール = スクロール（縦 / 横）、ctrl / ⌘ + ホイール = ズーム**（`CanvasOverlay.js` の `zoomHandler`）。
+実測（1440x900、ドリルダウントップ）: 400px ドラッグで tx 28 → −371.5、`WheelEvent(deltaY 200)` で ty 305.9 → 135.9、ctrl + `deltaY −100` で 0.85 → 0.89。
+preact の再描画は非同期なので、`transform` 属性の読み取りはイベントの次のフレーム以降に行う。
+
 ### ノードの装飾は getShape() の override で足せる。ただしラベルの foreignObject が当たり判定を奪う
 
 `BaseNode.getShape()` は `@overridable` なので、`super.getShape()` の戻りと自前の vnode を

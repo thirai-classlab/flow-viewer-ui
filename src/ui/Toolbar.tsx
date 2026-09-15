@@ -54,6 +54,8 @@ type Props = {
   onAnimate: (v: boolean) => void
   nestPath: boolean
   onNestPath: (v: boolean) => void
+  /** 今の内容を縮尺の下限なしでキャンバスに収める（#15「全体を表示」） */
+  onFitAll: () => void
   sideOpen: boolean
   onToggleSide: () => void
   theme: Theme
@@ -130,6 +132,7 @@ export function Toolbar(props: Props) {
     onAnimate,
     nestPath,
     onNestPath,
+    onFitAll,
     sideOpen,
     onToggleSide,
     theme,
@@ -227,8 +230,23 @@ export function Toolbar(props: Props) {
 
         {/* 見え方の微調整。常時出す必要が無いものはここに畳んである */}
         <Popover label="⚙" title="表示の詳細設定">
-          {() => (
+          {(close) => (
             <div className="menu">
+              {/* 既定の視野は読める縮尺（0.85）で止めてはみ出しをパンに任せる。
+                  全体を一望したいときだけ、下限なしで収め直す（押した結果が見えるよう閉じる） */}
+              <div className="menu-row">
+                <span className="label">縮尺</span>
+                <button
+                  onClick={() => {
+                    onFitAll()
+                    close()
+                  }}
+                  title="今の内容を縮尺の下限なしでキャンバスに収める"
+                >
+                  全体を表示
+                </button>
+              </div>
+
               <div className="menu-row">
                 <span className="label">方向</span>
                 <button data-active={direction === 'RIGHT'} onClick={() => onDirection('RIGHT')}>

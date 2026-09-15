@@ -24,6 +24,7 @@ import {
   ghostFactor,
   scaleAbout,
   spawnGhost,
+  transitionViewport,
   tweenLayout,
 } from './anim'
 import type { Placed } from './layout'
@@ -79,6 +80,8 @@ export type SplitEffectParams = {
   splitLayoutRef: { current: SplitPair<Map<string, Placed>> | null }
   splitViewportRef: { current: SplitPair<Viewport | null> }
   lastSplitRootRef: { current: string | null | undefined }
+  /** 「全体を表示」（fitAll）の実体。右ペインを下限なしで収め直す。cleanup で外す */
+  fitAllRef: { current: (() => void) | null }
   setError: (v: string | null) => void
   setSplitInfo: (v: { upper: number; lower: number; linked: number; cross: number } | null) => void
   setNestInfo: (
@@ -116,6 +119,7 @@ export function useSplitEffect(params: SplitEffectParams) {
     splitLayoutRef,
     splitViewportRef,
     lastSplitRootRef,
+    fitAllRef,
     setError,
     setSplitInfo,
     setNestInfo,
@@ -246,11 +250,12 @@ export function useSplitEffect(params: SplitEffectParams) {
         pad: number,
         prevVp: Viewport | null,
         maxScale: number,
+        minScale: number,
       ): Viewport => {
         const cw = paneW
         // 高さはペインの開閉で変わらないので実測でよい
         const ch = host.clientHeight || 500
-        const finalVp = fitViewport(graph.width, graph.height, cw, ch, pad, maxScale)
+        const finalVp = fitViewport(graph.width, graph.height, cw, ch, pad, maxScale, minScale)
         let startVp: Viewport | null = null
         if (animate) {
           if (transition === 'enter') startVp = scaleAbout(finalVp, 1 / DRILL_ZOOM_FACTOR, cw, ch)
@@ -263,6 +268,7 @@ export function useSplitEffect(params: SplitEffectParams) {
       }
 
       const prevVps = splitViewportRef.current
+      // 左ペインは見取り図なので従来どおり下限なし（NOTES.md の 5 階層実測がこの前提）
       const upperVp =
         upperLf !== null && upperHost !== null && upperGraph !== null
           ? fitPane(
@@ -273,8 +279,10 @@ export function useSplitEffect(params: SplitEffectParams) {
               SPLIT_FIT_PADDING,
               prevVps.upper,
               FIT.maxScaleUpper,
+              FIT.minScale,
             )
           : null
+      // 右ペイン（今いる階層の中身）は本編と同じく読める縮尺の下限付き
       const lowerVp = fitPane(
         lowerLf,
         lowerHost,
@@ -283,8 +291,28 @@ export function useSplitEffect(params: SplitEffectParams) {
         FIT_PADDING,
         prevVps.lower,
         FIT.maxScalePane,
+        FIT.minReadable,
       )
       splitViewportRef.current = { upper: upperVp, lower: lowerVp }
+
+      // 「全体を表示」: 右ペインだけ下限なしで収め直す（左ペインは元から下限なし）
+      const fitTarget = lowerLf
+      fitAllRef.current = () => {
+        const vp = fitViewport(
+          lowerGraph.width,
+          lowerGraph.height,
+          lowerPaneW,
+          lowerHost.clientHeight || 500,
+          FIT_PADDING,
+          FIT.maxScalePane,
+          FIT.minScale,
+        )
+        transitionViewport(fitTarget, wrap, vp, animate, timers)
+        splitViewportRef.current = { ...splitViewportRef.current, lower: vp }
+      }
+      disposers.push(() => {
+        fitAllRef.current = null
+      })
 
       // 縮尺は「入れ子が実際に潰れたか」の唯一の客観指標なので画面に出す
       setNestInfo(

@@ -14,10 +14,11 @@ import type { FlowViewProps, ViewMode } from '../flow/view-props'
 import type { DrillTransition } from '../flow/collapse'
 import { drillTransition, levelView, nodesAtLevel, nodesUnder } from '../flow/collapse'
 import type { LinkKind } from '../flow/schema'
-import { ANIM } from '../flow/theme'
+import { ANIM, FIT } from '../flow/theme'
 import type { Viewport } from './anim'
 import {
   DRILL_ZOOM_FACTOR,
+  FIT_PADDING,
   VIEW_ANIM_CLASS,
   applyViewport,
   ensureAnimStyles,
@@ -25,8 +26,10 @@ import {
   ghostFactor,
   scaleAbout,
   spawnGhost,
+  transitionViewport,
   tweenLayout,
 } from './anim'
+import { pickAutoCollapse } from './auto-collapse'
 import { docIdsOf } from './doc-index'
 import type { DrillGraph } from './drilldown'
 import { buildDrillGraph, buildFocusContextGraph } from './drilldown'
@@ -57,6 +60,17 @@ function isBadgeHit(e: MouseEvent | undefined): boolean {
   return target.closest(`.${BADGE_CLASS}`) !== null
 }
 
+/** nested のスコープ（drillRoot 配下、無ければ全体）。自動抽象化の判定と描画の両方で同じ集合を使う */
+function nestedScope(flat: FlowViewProps['flat'], links: FlowViewProps['doc']['links'], drillRoot: string | null) {
+  const scopeNodes = drillRoot ? nodesUnder(flat.nodes, flat.parentOf, drillRoot) : flat.nodes.slice()
+  const scopeIds = new Set(scopeNodes.map((n) => n.id))
+  const topIds = drillRoot
+    ? (flat.byId.get(drillRoot)?.childIds ?? [])
+    : flat.nodes.filter((n) => n.parentId === undefined).map((n) => n.id)
+  const scopeLinks = links.filter((l) => scopeIds.has(l.from) && scopeIds.has(l.to))
+  return { scopeNodes, scopeIds, topIds, scopeLinks }
+}
+
 export type DrillEffectParams = {
   doc: FlowViewProps['doc']
   flat: FlowViewProps['flat']
@@ -78,6 +92,7 @@ export type DrillEffectParams = {
       onToggleCollapse: (id: string) => void
       onDrillDown: (id: string | null) => void
       onSelect: (id: string | null) => void
+      onAutoCollapse: ((ids: string[]) => void) | undefined
     }
   }
   syncingRef: { current: boolean }
@@ -85,6 +100,10 @@ export type DrillEffectParams = {
   prevLayoutRef: { current: LayoutSnapshot | null }
   prevViewportRef: { current: Viewport | null }
   lastRootRef: { current: string | null | undefined }
+  /** 「全体を表示」（fitAll）の実体。描画のたびに今の内容で登録し直し、cleanup で外す */
+  fitAllRef: { current: (() => void) | null }
+  /** nested の自動抽象化を適用済みの (doc, viewMode)。同じ組では二度と適用しない */
+  autoCollapsedRef: { current: { doc: FlowViewProps['doc']; viewMode: ViewMode } | null }
   setError: (v: string | null) => void
   setOutOfScopeLinks: (v: number) => void
   setBoundaryMarkers: (v: number) => void
@@ -124,6 +143,8 @@ export function useDrillEffect(params: DrillEffectParams) {
     prevLayoutRef,
     prevViewportRef,
     lastRootRef,
+    fitAllRef,
+    autoCollapsedRef,
     setError,
     setOutOfScopeLinks,
     setBoundaryMarkers,
@@ -152,6 +173,38 @@ export function useDrillEffect(params: DrillEffectParams) {
     const wrap = wrapRef.current
     if (!host || !wrap) return
     let lf: LogicFlow | null = null
+
+    /* キャンバス実寸は視野合わせ（fitViewport）と自動抽象化の判定にだけ使う。
+     * レイアウト側の行折り返しは #13 で廃止した（dagre が主軸 1 本に並べ、
+     * 収まらないぶんはズーム / パンに任せる）。                        */
+    const cw = host.clientWidth || 800
+    const ch = host.clientHeight || 600
+
+    /* --- nested の自動抽象化（#15）: 初期表示で読める縮尺を割る深さを畳む --- *
+     * collapsed が空で、この (doc, viewMode) でまだ判定していないときだけ 1 回判定する
+     * （結果が「畳まない」でも判定済みにし、ユーザーの展開 / 折りたたみを上書きしない）。
+     * 畳む先が決まったら描画せずに戻る。collapsed が変わって走る次の effect が描くので、
+     * 遷移の判定（lastRootRef）とゴースト（ghostRef）はここでは触らず持ち越す。      */
+    const onAutoCollapse = cbRef.current.onAutoCollapse
+    const judged = autoCollapsedRef.current
+    const firstJudge = judged === null || judged.doc !== doc || judged.viewMode !== viewMode
+    if (viewMode === 'nested' && onAutoCollapse !== undefined && collapsed.size === 0 && firstJudge) {
+      autoCollapsedRef.current = { doc, viewMode }
+      try {
+        const scope = nestedScope(flat, doc.links, drillRoot)
+        const ctx: LayoutCtx = { byId: flat.byId, links: scope.scopeLinks, collapsed, direction }
+        const full = arrange(scope.topIds, ctx)
+        const containers = scope.scopeNodes.filter((n) => n.isContainer)
+        const ids = pickAutoCollapse(scope.topIds, containers, ctx, full, cw, ch)
+        if (ids !== null && ids.length > 0) {
+          onAutoCollapse(ids)
+          return
+        }
+      } catch (e: unknown) {
+        setError(e instanceof Error ? `${e.name}: ${e.message}` : String(e))
+        return
+      }
+    }
 
     // 実際に階層が変わったときだけ、共通レイヤの判定を使って向きを決める
     const rootChanged = lastRootRef.current !== drillRoot
@@ -187,11 +240,6 @@ export function useDrillEffect(params: DrillEffectParams) {
       // ホバー / 選択 / バッジ / 📄 を持つカスタムノード型（rect・diamond）を登録する
       registerAppNodes(lf)
 
-      /* キャンバス実寸は視野合わせ（fitViewport）にだけ使う。
-       * レイアウト側の行折り返しは #13 で廃止した（dagre が主軸 1 本に並べ、
-       * 収まらないぶんはズーム / パンに任せる）。                        */
-      const cw = host.clientWidth || 800
-      const ch = host.clientHeight || 600
       const docIds = docIdsOf(doc)
 
       // 画面に収めるべき描画結果のサイズ。両モードでここに書き込む
@@ -242,14 +290,7 @@ export function useDrillEffect(params: DrillEffectParams) {
         setContextInfo(null)
 
         // --- スコープ決定（ドリルダウン） ---
-        const scopeNodes = drillRoot
-          ? nodesUnder(flat.nodes, flat.parentOf, drillRoot)
-          : flat.nodes.slice()
-        const scopeIds = new Set(scopeNodes.map((n) => n.id))
-        const topIds = drillRoot
-          ? (flat.byId.get(drillRoot)?.childIds ?? [])
-          : flat.nodes.filter((n) => n.parentId === undefined).map((n) => n.id)
-        const scopeLinks = doc.links.filter((l) => scopeIds.has(l.from) && scopeIds.has(l.to))
+        const { scopeNodes, scopeIds, topIds, scopeLinks } = nestedScope(flat, doc.links, drillRoot)
 
         if (scopeNodes.length === 0) {
           throw new Error(`ドリルダウン先 ${String(drillRoot)} に子ノードがありません`)
@@ -329,9 +370,21 @@ export function useDrillEffect(params: DrillEffectParams) {
         fitH = root.height
       }
 
-      /* --- 視野合わせ（fitView は非表示の子ノードまで含めてしまうので自前で計算） --- */
+      /* --- 視野合わせ（fitView は非表示の子ノードまで含めてしまうので自前で計算） --- *
+       * 既定は読める縮尺の下限（FIT.minReadable）付き。はみ出しはパンで見る。          */
       const finalVp = fitViewport(fitW, fitH, cw, ch)
       const prevVp = prevViewportRef.current
+
+      // 「全体を表示」: 同じ内容を下限なしで収める。次の同階層の再描画はこの位置から補間する
+      const fitTarget = lf
+      fitAllRef.current = () => {
+        const vp = fitViewport(fitW, fitH, cw, ch, FIT_PADDING, FIT.maxScale, FIT.minScale)
+        transitionViewport(fitTarget, wrap, vp, animate, timers)
+        prevViewportRef.current = vp
+      }
+      disposers.push(() => {
+        fitAllRef.current = null
+      })
 
       // アニメーション時だけ「始点」を作る。潜る→少し引いた位置から寄る、戻る→寄った位置から引く。
       // 階層が変わらない再描画（方向切替など）は、直前のビューポートから補間する。

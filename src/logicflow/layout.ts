@@ -406,16 +406,26 @@ const EMPTY_ARRANGED = (boxes: Box[]): Arranged => ({
   ranks: new Map(),
 })
 
-export function arrange(ids: readonly string[], ctx: LayoutCtx): Arranged {
-  const boxes = ids.map((id) => measure(id, ctx))
-  if (boxes.length === 0) return EMPTY_ARRANGED(boxes)
+/** dagre に渡すグラフ型（エッジ名付きの multigraph） */
+type DagreGraph = InstanceType<typeof graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>>
 
-  const horiz = ctx.direction === 'RIGHT'
+/** 配線結果を使う（両端がこの階層の箱そのもの）リンク。dagre のエッジ名 = 配線 key */
+type RoutedLink = { key: string; from: Box; to: Box; label: string | undefined }
+
+/**
+ * (1) dagre のグラフを組む。ノードは場所取りサイズ（slotW/slotH）で置く。
+ * 配線結果を使うのは両端がこの階層の箱そのものであるリンクだけ。
+ * 中身のノード同士を結ぶリンク（nested モード）はランク付けにだけ効かせ、同じ箱の組は 1 本に畳む。
+ */
+function buildDagreGraph(
+  ids: readonly string[],
+  boxes: readonly Box[],
+  ctx: LayoutCtx,
+  horiz: boolean,
+): { g: DagreGraph; routed: RoutedLink[] } {
   const gap = ctx.gap ?? LAYOUT_GAP
   const keys = edgeKeysOf(ctx.links)
   const boxOf = new Map(boxes.map((b) => [b.id, b] as const))
-
-  /* --- dagre のグラフを組む。ノードは場所取りサイズ（slotW/slotH）で置く --- */
   const g = new graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>({ multigraph: true })
   g.setGraph({
     rankdir: horiz ? 'LR' : 'TB',
@@ -428,9 +438,7 @@ export function arrange(ids: readonly string[], ctx: LayoutCtx): Arranged {
   g.setDefaultEdgeLabel(() => ({}))
   for (const b of boxes) g.setNode(b.id, { width: b.slotW, height: b.slotH })
 
-  // 配線結果を使うのは両端がこの階層の箱そのものであるリンクだけ。
-  // 中身のノード同士を結ぶリンク（nested モード）はランク付けにだけ効かせ、同じ箱の組は 1 本に畳む
-  const routed: { key: string; from: Box; to: Box; label: string | undefined }[] = []
+  const routed: RoutedLink[] = []
   const projectedSeen = new Set<string>()
   for (const p of projectLinks(ids, ctx)) {
     const link = ctx.links[p.index]
@@ -443,14 +451,16 @@ export function arrange(ids: readonly string[], ctx: LayoutCtx): Arranged {
     }
     const key = keys[p.index]
     const label = link.label !== undefined && link.label !== '' ? link.label : undefined
+    // label も渡す。dagre がラベルぶんの場所を空けるので、隣接ノード間のラベルが枠に重ならない
     const dims = label === undefined ? {} : { ...labelSizeOf(label), labelpos: 'c' as const }
     g.setEdge(p.s, p.t, dims, key)
     routed.push({ key, from: boxOf.get(p.s) as Box, to: boxOf.get(p.t) as Box, label })
   }
+  return { g, routed }
+}
 
-  dagreLayout(g)
-
-  /* --- 箱の位置。dagre の x/y は中心なので左上オフセットに直す --- */
+/** (2) 箱の位置を確定する。dagre の x/y は中心なので左上オフセットに直す。ランクは診断・回帰用 */
+function placeBoxes(g: DagreGraph, boxes: readonly Box[]): Map<string, number> {
   const ranks = new Map<string, number>()
   for (const b of boxes) {
     const n = g.node(b.id)
@@ -458,8 +468,18 @@ export function arrange(ids: readonly string[], ctx: LayoutCtx): Arranged {
     b.offY = n.y! - b.slotH / 2
     ranks.set(b.id, n.rank ?? 0)
   }
+  return ranks
+}
 
-  /* --- 配線。dagre の折れ線を直交化し、ラベル位置を拾う --- */
+/** ラベルの占有矩形（原点の正規化で線やラベルが箱より外へ出るぶんを数える） */
+type LabelBox = { at: Point; width: number; height: number }
+
+/** (3) 配線を抽出する。dagre の折れ線を直交化し、ラベル位置を拾う */
+function extractRoutes(
+  g: DagreGraph,
+  routed: readonly RoutedLink[],
+  horiz: boolean,
+): { edgePoints: Map<string, Point[]>; labelAt: Map<string, Point>; labelBoxes: LabelBox[] } {
   const geomOf = (b: Box): Geom => {
     const cx = b.offX + b.slotW / 2
     const cy = b.offY + b.slotH / 2
@@ -473,7 +493,7 @@ export function arrange(ids: readonly string[], ctx: LayoutCtx): Arranged {
   }
   const edgePoints = new Map<string, Point[]>()
   const labelAt = new Map<string, Point>()
-  const labelBoxes: { at: Point; width: number; height: number }[] = []
+  const labelBoxes: LabelBox[] = []
   for (const r of routed) {
     const e = g.edge(r.from.id, r.to.id, r.key)
     const pts = e.points ?? []
@@ -487,8 +507,19 @@ export function arrange(ids: readonly string[], ctx: LayoutCtx): Arranged {
     }
     edgePoints.set(r.key, orthogonalRoute(pts, geomOf(r.from), geomOf(r.to), horiz, label))
   }
+  return { edgePoints, labelAt, labelBoxes }
+}
 
-  /* --- 原点を 0 始まりに正規化する（線やラベルが箱より外へ出ることがある） --- */
+/**
+ * (4) 原点を 0 始まりに正規化する（線やラベルが箱より外へ出ることがある）。
+ * boxes の offX/offY はその場で平行移動し、配線は移動後の新しい Map を返す。
+ */
+function normalizeOrigin(
+  boxes: readonly Box[],
+  edgePoints: ReadonlyMap<string, Point[]>,
+  labelAt: ReadonlyMap<string, Point>,
+  labelBoxes: readonly LabelBox[],
+): Pick<Arranged, 'width' | 'height' | 'edgePoints' | 'labelAt'> {
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
@@ -509,15 +540,25 @@ export function arrange(ids: readonly string[], ctx: LayoutCtx): Arranged {
     b.offY -= minY
   }
   const shifted = shiftRoutes(edgePoints, labelAt, -minX, -minY)
+  return { width: maxX - minX, height: maxY - minY, ...shifted }
+}
 
-  return {
-    boxes,
-    width: maxX - minX,
-    height: maxY - minY,
-    edgePoints: shifted.edgePoints,
-    labelAt: shifted.labelAt,
-    ranks,
-  }
+/**
+ * 1 階層ぶんの箱を並べて配線する。
+ * 手順は (1) dagre のグラフを組む → (2) 箱の位置を確定 → (3) 配線を抽出 → (4) 原点を正規化。
+ * 入れ子の中身は measure() が再帰的に arrange() を呼んで先に決めている。
+ */
+export function arrange(ids: readonly string[], ctx: LayoutCtx): Arranged {
+  const boxes = ids.map((id) => measure(id, ctx))
+  if (boxes.length === 0) return EMPTY_ARRANGED(boxes)
+
+  const horiz = ctx.direction === 'RIGHT'
+  const { g, routed } = buildDagreGraph(ids, boxes, ctx, horiz)
+  dagreLayout(g)
+  const ranks = placeBoxes(g, boxes)
+  const { edgePoints, labelAt, labelBoxes } = extractRoutes(g, routed, horiz)
+  const normalized = normalizeOrigin(boxes, edgePoints, labelAt, labelBoxes)
+  return { boxes, ranks, ...normalized }
 }
 
 export type Placed = { x: number; y: number; w: number; h: number }

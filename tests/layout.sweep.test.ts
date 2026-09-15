@@ -7,6 +7,9 @@
  *
  * drilldown（showContext = false）の buildDrillGraph 相当を、LogicFlow を介さずに回す
  * （境界マーカーは省略）。src/flow/ は読み取り専用で import する。
+ *
+ * 加えて buildDrillGraph 本体（境界マーカー `__edge:` 擬似ノード込み）も全ドリル経路で回し、
+ * 境界エッジの経路が直交・端点が枠線上であることを同じ checker で assert する（#15、#13 のレビュー MEDIUM）。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -16,6 +19,7 @@ import { edgesAtLevel, nodesAtLevel } from '../src/flow/collapse'
 import { flattenDoc } from '../src/flow/flatten'
 import type { FlowLink } from '../src/flow/schema'
 import { FIT } from '../src/flow/theme'
+import { buildDrillGraph } from '../src/logicflow/drilldown'
 import type { LayoutCtx, Placed, Point } from '../src/logicflow/layout'
 import { EMPTY_COLLAPSE, arrange, edgeKeysOf, emitArranged } from '../src/logicflow/layout'
 
@@ -196,7 +200,57 @@ function sweep(): Sweep {
   return out
 }
 
+/** 直交折れ線か（斜めの区間が無い） */
+function isOrthogonal(pts: readonly Point[]): boolean {
+  for (let k = 1; k < pts.length; k += 1) {
+    if (Math.abs(pts[k - 1].x - pts[k].x) > 0.5 && Math.abs(pts[k - 1].y - pts[k].y) > 0.5) return false
+  }
+  return true
+}
+
+type BoundarySweep = { runs: number; markers: number; boundaryEdges: number; broken: string[] }
+
+/**
+ * buildDrillGraph（境界マーカー込み）を 32 ケース × 全ドリル経路 × 2 方向で回す。
+ * LogicFlow のエッジ config（pointsList / startPoint / endPoint）を、ノードの確定座標（positions）に対して
+ * arrange() の sweep と同じ基準で検査する。境界マーカーは flat.byId に無い擬似ノードなので、
+ * 位置は positions（buildDrillGraph が返す）から引く。
+ */
+function sweepBoundaries(): BoundarySweep {
+  const out: BoundarySweep = { runs: 0, markers: 0, boundaryEdges: 0, broken: [] }
+  const docIds = new Set<string>()
+  for (const c of allCases) {
+    const flat = flattenDoc(c.doc)
+    for (const root of [null, ...flat.containerIds]) {
+      const level = nodesAtLevel(flat.nodes, flat.parentOf, root)
+      if (level.length === 0) continue
+      for (const direction of ['RIGHT', 'DOWN'] as const) {
+        const tag = `${c.id}/${root ?? 'top'}/${direction}`
+        out.runs += 1
+        const graph = buildDrillGraph(level, c.doc.links, flat, root, direction, docIds)
+        out.markers += graph.boundaryCount
+        for (const e of graph.edges) {
+          const isBoundary = (e.id ?? '').startsWith('bd-')
+          if (isBoundary) out.boundaryEdges += 1
+          const pts = e.pointsList
+          const s = graph.positions.get(e.sourceNodeId)
+          const t = graph.positions.get(e.targetNodeId)
+          if (pts === undefined || pts.length < 2 || s === undefined || t === undefined) {
+            out.broken.push(`${tag}: no route ${e.id ?? '?'}`)
+            continue
+          }
+          if (!isOrthogonal(pts)) out.broken.push(`${tag}: diagonal segment in ${e.id}`)
+          if (!onBorder(pts[0], s)) out.broken.push(`${tag}: start off border ${e.id}`)
+          if (!onBorder(pts[pts.length - 1], t)) out.broken.push(`${tag}: end off border ${e.id}`)
+        }
+      }
+    }
+  }
+  return out
+}
+
 const result = sweep()
+const boundaryResult = sweepBoundaries()
 
 describe('arrange() 848 通りの回帰', () => {
   it('例外 0', () => {
@@ -219,6 +273,14 @@ describe('arrange() 848 通りの回帰', () => {
   it('配線は直交で両端が枠線上、ラベルは線上', () => {
     expect(result.brokenRoutes).toEqual([])
     expect(result.labelsOffRoute).toEqual([])
+  })
+
+  it('buildDrillGraph（境界マーカー込み）: 全エッジが直交で両端が枠線上', () => {
+    expect(boundaryResult.runs).toBe(EXPECTED_RUNS)
+    // 境界マーカーが 1 つも無ければこのケースは何も検査していない
+    expect(boundaryResult.markers).toBeGreaterThan(0)
+    expect(boundaryResult.boundaryEdges).toBe(boundaryResult.markers)
+    expect(boundaryResult.broken).toEqual([])
   })
 
   it('面積比・縮尺の集計（レポートのみ）', () => {

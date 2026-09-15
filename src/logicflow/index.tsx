@@ -3,6 +3,7 @@
  *
  * UI 側との契約はこのファイルの `FlowCanvas` ただ 1 つ。
  * `<FlowCanvas {...viewProps} />` を呼ぶだけで 5 状態（nested / drilldown ×2 / split ×2）が動く。
+ * ref（FlowViewerHandle）は「今の描画に一度だけ効く命令」用で、第 1 号は fitAll（全体を表示）。
  *
  * 設計の前提（ライブラリ選定の実測根拠は NOTES.md に全文がある）:
  *   1. 折りたたみは共通の rewriteEdges() を使わず、dynamic-group プラグインの
@@ -17,6 +18,7 @@
  *   layout.ts            自前レイアウト（DAG のランク付け + 入れ子の箱詰め）
  *   nodes.ts             LogicFlow データへの変換 / カスタムノード
  *   anim.ts              アニメーション CSS・ビューポート・ゴースト・位置トゥイーン
+ *   auto-collapse.ts     nested の自動抽象化（読める縮尺を割る深さを初期表示で畳む）
  *   lf.ts                インスタンス生成と共通テーマ
  *   drilldown.ts         drilldown モードのグラフ構築（showContext 両方）
  *   split.ts             split モードのグラフ構築（nestPath 両方）
@@ -26,10 +28,18 @@
  *   NOTES.md             実装して分かったこと（採用根拠 / 踏んではいけない地雷）
  */
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import type LogicFlow from '@logicflow/core'
 
-import type { FlowViewProps } from '../flow/view-props'
+import type { FlowViewProps, FlowViewerHandle, ViewMode } from '../flow/view-props'
 import { pathTo } from '../flow/flatten'
 import { MAX_NEST_LEVELS } from '../flow/collapse'
 import { CANVAS_COLOR, CHIP_COLOR, CONTEXT_COLOR, SPLIT } from '../flow/theme'
@@ -47,7 +57,7 @@ import { useSplitEffect } from './use-split-effect'
  * React コンポーネント — UI 側に公開する唯一の入口
  * ------------------------------------------------------------------ */
 
-export function FlowCanvas(props: FlowViewProps) {
+export const FlowCanvas = forwardRef<FlowViewerHandle, FlowViewProps>(function FlowCanvas(props, ref) {
   const {
     doc,
     flat,
@@ -104,12 +114,20 @@ export function FlowCanvas(props: FlowViewProps) {
     onToggleCollapse: props.onToggleCollapse,
     onDrillDown: props.onDrillDown,
     onSelect: props.onSelect,
+    onAutoCollapse: props.onAutoCollapse,
   })
   cbRef.current = {
     onToggleCollapse: props.onToggleCollapse,
     onDrillDown: props.onDrillDown,
     onSelect: props.onSelect,
+    onAutoCollapse: props.onAutoCollapse,
   }
+  /* 「全体を表示」の実体。描画 effect（drill / split）が「今の内容を下限なしで収める」関数を
+     登録し、cleanup で外す。描画が無い瞬間（エラー時など）は null なので何もしない。 */
+  const fitAllRef = useRef<(() => void) | null>(null)
+  useImperativeHandle(ref, () => ({ fitAll: () => fitAllRef.current?.() }), [])
+  // nested の自動抽象化を判定済みの (doc, viewMode)。同じ組では二度と適用しない
+  const autoCollapsedRef = useRef<{ doc: FlowViewProps['doc']; viewMode: ViewMode } | null>(null)
   // プログラム側から toggleCollapse を呼ぶ間は dynamicGroup:collapse を無視する
   const syncingRef = useRef(false)
   // 直前の描画のスナップショット（ゴースト HTML / 座標 / ビューポート / 階層）
@@ -146,6 +164,8 @@ export function FlowCanvas(props: FlowViewProps) {
     prevLayoutRef,
     prevViewportRef,
     lastRootRef,
+    fitAllRef,
+    autoCollapsedRef,
     setError,
     setOutOfScopeLinks,
     setBoundaryMarkers,
@@ -176,6 +196,7 @@ export function FlowCanvas(props: FlowViewProps) {
     splitLayoutRef,
     splitViewportRef,
     lastSplitRootRef,
+    fitAllRef,
     setError,
     setSplitInfo,
     setNestInfo,
@@ -515,5 +536,5 @@ export function FlowCanvas(props: FlowViewProps) {
       )}
     </div>
   )
-}
+})
 

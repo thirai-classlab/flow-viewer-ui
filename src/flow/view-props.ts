@@ -28,6 +28,15 @@ export type Theme = 'light' | 'dark'
 
 export const DEFAULT_THEME: Theme = 'light'
 
+/**
+ * FlowCanvas が ref で公開する操作（将来の公開 API。第 1 号は fitAll）。
+ * props は「状態を渡す」、ref は「今の描画に一度だけ効く命令」という分担にする。
+ */
+export type FlowViewerHandle = {
+  /** 今の内容を縮尺の下限なしでキャンバスに収める（#15「全体を表示」） */
+  fitAll: () => void
+}
+
 export type FlowViewProps = {
   /** 真実源の JSON */
   doc: FlowDoc
@@ -39,6 +48,12 @@ export type FlowViewProps = {
   collapsed: CollapseState
   /** グループの折りたたみ切替を要求する */
   onToggleCollapse: (id: string) => void
+  /**
+   * nested の初期表示で「読める縮尺（FIT.minReadable）を割る深さ」を自動で畳むとき、
+   * 畳むグループ id をまとめて要求する（#15）。collapsed が空で、この doc × viewMode で
+   * まだ適用していないときに 1 回だけ呼ぶ。省略すると自動抽象化は行わない。
+   */
+  onAutoCollapse?: (ids: string[]) => void
   /** レイアウト方向 */
   direction: Direction
   /** 現在潜っている階層。null ならトップ */
