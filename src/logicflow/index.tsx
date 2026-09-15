@@ -42,7 +42,8 @@ import type LogicFlow from '@logicflow/core'
 import type { FlowViewProps, FlowViewerHandle, ViewMode } from '../flow/view-props'
 import { pathTo } from '../flow/flatten'
 import { MAX_NEST_LEVELS } from '../flow/collapse'
-import { CANVAS_COLOR, CHIP_COLOR, CONTEXT_COLOR, SPLIT } from '../flow/theme'
+import { CANVAS_COLOR, CHIP_COLOR, CONTEXT_COLOR, ICON_SIZE, SPLIT } from '../flow/theme'
+import { Icon } from '../icons/Icon'
 import type { Viewport } from './anim'
 import { ANIM_CLASS, HOST_CLASS, PANE_IN_CLASS } from './anim'
 import type { Placed } from './layout'
@@ -280,8 +281,9 @@ export const FlowCanvas = forwardRef<FlowViewerHandle, FlowViewProps>(function F
               {/* 経路が MAX_NEST_LEVELS を超えて畳まれた祖先。クリックでその階層へ戻る */}
               {useNestUi && nestInfo !== null && nestInfo.omitted.length > 0 && (
                 <div style={nestOmitStyle}>
-                  <span style={{ color: CANVAS_COLOR.textDim, flex: '0 0 auto' }}>
-                    ⋯ 上位 {nestInfo.omitted.length} 階層
+                  <span style={{ color: CANVAS_COLOR.textDim, flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    <Icon name="ellipsis" size={ICON_SIZE.chip} />
+                    上位 {nestInfo.omitted.length} 階層
                   </span>
                   {nestInfo.omitted.map((a) => (
                     <button
@@ -331,6 +333,7 @@ export const FlowCanvas = forwardRef<FlowViewerHandle, FlowViewProps>(function F
                 <button
                   type="button"
                   onClick={goUp}
+                  className="icon-btn"
                   style={{
                     marginLeft: 8,
                     background: 'none',
@@ -340,9 +343,12 @@ export const FlowCanvas = forwardRef<FlowViewerHandle, FlowViewProps>(function F
                     cursor: 'pointer',
                     font: 'inherit',
                     padding: '0 6px',
+                    gap: 3,
+                    verticalAlign: 'middle',
                   }}
                 >
-                  ↑ 戻る
+                  <Icon name="arrowUp" size={ICON_SIZE.chip} />
+                  戻る
                 </button>
               )}
             </div>
@@ -390,12 +396,13 @@ export const FlowCanvas = forwardRef<FlowViewerHandle, FlowViewProps>(function F
           pointerEvents: 'none',
         }}
       >
-        {/* split は右ペイン見出しに「↑ 戻る」を置いてある。
-            drilldown / nested はシェル側のツールバーが現在地と「↑ 上へ」を出すので、
+        {/* split は右ペイン見出しに「戻る」を置いてある。
+            drilldown / nested はシェル側のツールバーが現在地と「上へ」を出すので、
             キャンバス内に二重に置かない（フローが画面いっぱいになり、必ず箱に重なるため）。 */}
         {drillRoot !== null && !isSplit && viewMode === 'nested' && (
-          <button type="button" onClick={goUp} style={{ pointerEvents: 'auto' }}>
-            ↑ 上へ
+          <button type="button" className="icon-btn" onClick={goUp} style={{ pointerEvents: 'auto' }}>
+            <Icon name="arrowUp" size={ICON_SIZE.button} />
+            上へ
           </button>
         )}
         {/* トップ階層では戻る先が無いのでパンくずごと出さない。
@@ -436,7 +443,7 @@ export const FlowCanvas = forwardRef<FlowViewerHandle, FlowViewProps>(function F
             ))}
           </span>
         )}
-        {/* drilldown は「▸ 中を見る」バッジ・ホバーの光り方・pointer カーソルで
+        {/* drilldown は「中を見る」バッジ・ホバーの枠色・pointer カーソルで
             操作を見せているので、ここで文章にはしない（説明文がフローの上を覆っていた）。
             記号の意味を言葉でしか示せない split / nested だけ短い注記を残す。 */}
         {viewMode !== 'drilldown' && (

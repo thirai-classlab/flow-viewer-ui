@@ -17,7 +17,7 @@ import {
   SPLIT,
 } from '../flow/theme'
 import type { Placed, Point } from './layout'
-import { CONTEXT_CLASS, DOC_CLASS, DRILL_CLASS, NODE_CLASS, SELECT_CLASS } from './nodes'
+import { BADGE_CLASS, BADGE_PART_CLASS, CONTEXT_CLASS, DOC_CLASS, DRILL_CLASS, SELECT_CLASS } from './nodes'
 
 /** 視野合わせの余白。旧値 72 は 820x544 のキャンバスの 13% を捨てていた */
 export const FIT_PADDING = FIT.padding
@@ -74,29 +74,31 @@ export function ensureAnimStyles() {
    「破線の箱＝グループ。クリックで潜る」を文字で説明していたのをやめ、
    見た目で分かるようにする。LogicFlow は最外 <g> の class を
    BaseNodeModel.getOuterGAttributes() でしか触れないので、
-   nodes.ts のカスタムモデルがここで使う class を付けている。       */
+   nodes.ts のカスタムモデルがここで使う class を付けている。
+   glow（drop-shadow）は #6 で全部外した。枠の色と太さの遷移だけで示す。 */
 
-/* 潜れる箱: カーソルが変わり、ホバーで枠が光る */
+/* 潜れる箱: カーソルが変わり、ホバーで枠がアクセント色 2px になる */
 .${HOST_CLASS} .${DRILL_CLASS} { cursor: pointer; }
 .${HOST_CLASS} .${DRILL_CLASS} .lf-basic-shape,
-.${HOST_CLASS} .${DRILL_CLASS} .lfa-badge-bg {
+.${HOST_CLASS} .${DRILL_CLASS} .${BADGE_PART_CLASS.bg},
+.${HOST_CLASS} .${DRILL_CLASS} .${BADGE_PART_CLASS.label},
+.${HOST_CLASS} .${DRILL_CLASS} .${BADGE_PART_CLASS.count},
+.${HOST_CLASS} .${DRILL_CLASS} .${BADGE_PART_CLASS.icon},
+.${HOST_CLASS} .${DRILL_CLASS} .${BADGE_PART_CLASS.divider} {
   transition: stroke 140ms ease-out, stroke-width 140ms ease-out, fill 140ms ease-out;
 }
 .${HOST_CLASS} .${DRILL_CLASS}:hover .lf-basic-shape {
   stroke: ${HOVER_COLOR.stroke};
-  stroke-width: 3.4;
+  stroke-width: ${HOVER_COLOR.strokeWidth};
 }
-.${HOST_CLASS} .${DRILL_CLASS}:hover {
-  filter: drop-shadow(0 0 7px ${HOVER_COLOR.glow});
-}
-.${HOST_CLASS} .${DRILL_CLASS}:hover .lfa-badge-bg {
-  fill: ${BADGE_COLOR.stroke};
-}
-.${HOST_CLASS} .${DRILL_CLASS}:hover .lfa-badge-label {
-  fill: ${BADGE_COLOR.countText};
-}
-/* バッジ（▸ 中を見る N）だけは単一クリックでも潜れる。押せることを明示する */
-.${HOST_CLASS} .lfa-badge { cursor: pointer; }
+/* バッジはピルごとアクセント色に反転する。文字 / 件数は fill、chevron / 区切り線は stroke で描いている */
+.${HOST_CLASS} .${DRILL_CLASS}:hover .${BADGE_PART_CLASS.bg} { fill: ${BADGE_COLOR.hoverFill}; }
+.${HOST_CLASS} .${DRILL_CLASS}:hover .${BADGE_PART_CLASS.label},
+.${HOST_CLASS} .${DRILL_CLASS}:hover .${BADGE_PART_CLASS.count} { fill: ${BADGE_COLOR.hoverText}; }
+.${HOST_CLASS} .${DRILL_CLASS}:hover .${BADGE_PART_CLASS.icon},
+.${HOST_CLASS} .${DRILL_CLASS}:hover .${BADGE_PART_CLASS.divider} { stroke: ${BADGE_COLOR.hoverText}; }
+/* バッジ（中を見る N）だけは単一クリックでも潜れる。押せることを明示する */
+.${HOST_CLASS} .${BADGE_CLASS} { cursor: pointer; }
 /* LogicFlow はノードのラベルを foreignObject の HTML で描き、その div が
    枠いっぱい（min-height = ノード高）に広がるためバッジの上に載ってしまう。
    実測: バッジ中央の elementFromPoint が .lf-node-text-auto-wrap を返し、
@@ -104,21 +106,24 @@ export function ensureAnimStyles() {
    ラベルは読むものであって押すものではないので、当たり判定を下の図形へ通す。 */
 .${HOST_CLASS} .lf-node foreignObject { pointer-events: none; }
 
-/* 選択中のノード。ホバーより強い色を使い、常に 1 つだけ目立たせる */
+/* 選択中のノード。ホバーより強い色と太さを使い、常に 1 つだけ目立たせる */
 .${HOST_CLASS} .${SELECT_CLASS} .lf-basic-shape {
   stroke: ${SELECT_COLOR.stroke} !important;
-  stroke-width: 3.6 !important;
+  stroke-width: ${SELECT_COLOR.strokeWidth} !important;
   stroke-dasharray: none !important;
-}
-.${HOST_CLASS} .${SELECT_CLASS} {
-  filter: drop-shadow(0 0 9px ${SELECT_COLOR.glow});
 }
 /* 選択されたら薄いコンテキスト層でも読める濃さまで戻す */
 .${HOST_CLASS} .${CONTEXT_CLASS}.${SELECT_CLASS} { opacity: 1; }
 
-/* 手順書（doc）を持つノードの 📄 マーク。図の上で「読むものがある」と分かる */
+/* 手順書（doc）を持つノードの fileText マーク。図の上で「読むものがある」と分かる */
 .${HOST_CLASS} .${DOC_CLASS} { pointer-events: none; }
-.${HOST_CLASS} .${NODE_CLASS} { transition: filter 140ms ease-out; }
+
+/* nested の折りたたみ ±。dynamic-group プラグインが色を固定値で描く（extension の
+   dynamic-group/node.js getOperateIcon: rect fill #f4f5f6 / stroke #cecece、path stroke #818281）。
+   type を再登録すると折りたたみが壊れる（NOTES.md）ので、属性セレクタで色だけテーマに寄せる。 */
+.${HOST_CLASS} rect[fill="#f4f5f6"] { fill: var(--fv-bg-raised); }
+.${HOST_CLASS} rect[stroke="#cecece"] { stroke: var(--fv-border); }
+.${HOST_CLASS} path[stroke="#818281"] { stroke: var(--fv-text-dim); }
 
 .${ANIM_CLASS} .lf-node {
   transform-box: fill-box;

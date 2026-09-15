@@ -36,7 +36,7 @@ import { BADGE_CLASS, applySelection, registerAppNodes } from './nodes'
 /** LogicFlow がノードイベントに渡す引数のうち、ここで使うものだけ */
 type NodeEventArgs = { data?: { id?: string }; e?: MouseEvent }
 
-/** 「▸ 中を見る」バッジの上で押されたか（バッジだけは単一クリックで潜れる） */
+/** 「中を見る」バッジの上で押されたか（バッジだけは単一クリックで潜れる） */
 function isBadgeHit(e: MouseEvent | undefined): boolean {
   const target = e?.target
   if (!(target instanceof Element)) return false
@@ -218,7 +218,7 @@ export function useSplitEffect(params: SplitEffectParams) {
              plugins はインスタンスオプションなので静的登録は使わない --- */
       if (upperHost !== null) upperLf = createLogicFlow(upperHost)
       lowerLf = createLogicFlow(lowerHost)
-      // ホバー / 選択 / バッジ / 📄 のカスタムノード型はインスタンス単位に登録する
+      // ホバー / 選択 / バッジ / 手順書マークのカスタムノード型はインスタンス単位に登録する
       if (upperLf !== null) registerAppNodes(upperLf)
       registerAppNodes(lowerLf)
       splitLfRef.current = { upper: upperLf, lower: lowerLf }
@@ -377,7 +377,7 @@ export function useSplitEffect(params: SplitEffectParams) {
         else cbRef.current.onSelect(id)
       }
       /* 右ペインは本編と同じ契約:
-           単一クリック  → 選択（「▸ 中を見る」バッジの上だけは潜る）
+           単一クリック  → 選択（「中を見る」バッジの上だけは潜る）
            ダブルクリック → 潜る */
       const onLowerClick = (args: NodeEventArgs) => {
         const id = args?.data?.id

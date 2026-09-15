@@ -20,17 +20,19 @@ import type { FlowLink, LinkKind } from '../flow/schema'
 import {
   BADGE_COLOR,
   BADGE_SIZE,
-  CANVAS_COLOR,
   CONTEXT_COLOR,
   COLLAPSED_SIZE,
   CROSSING_COLOR,
   DOC_COLOR,
+  ICON_SIZE,
   KIND_COLOR,
   LINK_COLOR,
   LINK_DASH,
   NODE_FONT,
   SPLIT,
 } from '../flow/theme'
+import { ICONS, ICON_DEFAULTS } from '../icons/lucide'
+import type { IconName } from '../icons/lucide'
 import type { EdgeRoute, Placed } from './layout'
 import { labelTextWidth } from './layout'
 
@@ -42,7 +44,7 @@ import { labelTextWidth } from './layout'
  *
  * 標準の 'rect' / 'diamond' をそのまま使うと
  *   (a) 最外 <g> に class を出せない（＝ホバー / 選択を CSS で書けない）
- *   (b) 箱の中に「▸ 中を見る N」バッジや 📄 マークを足せない
+ *   (b) 箱の中に「中を見る N」バッジや手順書ありのアイコンを足せない
  * の 2 つができない。どちらも LogicFlow が用意している拡張点
  *   model 側: BaseNodeModel.getOuterGAttributes()  … 最外 <g> の属性
  *   view 側 : BaseNode.getShape()                  … 図形そのもの
@@ -67,14 +69,22 @@ export const EDGE_TYPE = { polyline: 'lfa-polyline' } as const
 
 /** 全カスタムノードに付く class。ホバーの transition をまとめて当てる */
 export const NODE_CLASS = 'lfa-node'
-/** 潜れるノードに付く class。cursor: pointer とホバーの光り方はここで決まる */
+/** 潜れるノードに付く class。cursor: pointer とホバーの枠色（anim.ts）はここで決まる */
 export const DRILL_CLASS = 'lfa-drill'
 /** 選択中ノードに付く class。描画後に DOM 側から付け外しする（再描画を避けるため） */
 export const SELECT_CLASS = 'lfa-sel'
 /** doc（手順書）マークのグループに付く class */
 export const DOC_CLASS = 'lfa-doc'
-/** 「▸ 中を見る」バッジに付く class。単一クリックの当たり判定にも使う */
+/** 「中を見る」バッジに付く class。単一クリックの当たり判定にも使う */
 export const BADGE_CLASS = 'lfa-badge'
+/** バッジの部品に付く class。anim.ts のホバー CSS がこの名前で色を反転させる */
+export const BADGE_PART_CLASS = {
+  bg: 'lfa-badge-bg',
+  icon: 'lfa-badge-icon',
+  label: 'lfa-badge-label',
+  divider: 'lfa-badge-divider',
+  count: 'lfa-badge-count',
+} as const
 
 const LF_TYPE: Record<FlatNode['kind'], string> = {
   start: NODE_TYPE.rect,
@@ -93,9 +103,9 @@ type DecorProps = {
   isDrillTarget?: boolean
   /** コンテキスト層（1 つ上の階層）のノードか */
   isContextLayer?: boolean
-  /** 手順書を持つか。true なら 📄 マークを出す */
+  /** 手順書を持つか。true なら fileText アイコンを出す */
   hasDoc?: boolean
-  /** グループの中身の件数。数値のときだけ「▸ 中を見る N」バッジを描く */
+  /** グループの中身の件数。数値のときだけ「中を見る N」バッジを描く */
   drillCount?: number
   width?: number
   height?: number
@@ -114,51 +124,68 @@ function outerAttrs(model: { id: string; properties: unknown }): LogicFlow.DomAt
   return { className: classes.join(' '), 'data-nid': model.id }
 }
 
-/** 📄 マーク。箱の右上に小さく出す */
-function docMark(cx: number, cy: number) {
+/**
+ * Lucide のアイコンをキャンバス（LogicFlow の h()）に描く。
+ * 24×24 の path データを (cx, cy) 中心・1 辺 size px に置く。
+ * <use href> にしないのは、split の 2 インスタンスとゴースト複製で id 参照が切れるため（lucide.ts 冒頭）。
+ * stroke は属性で与えるので、CSS（anim.ts）の stroke 指定がホバー時にこれを上書きできる。
+ */
+function iconShape(name: IconName, cx: number, cy: number, size: number, color: string, className?: string) {
   return h(
     'g',
-    { className: DOC_CLASS },
-    h('circle', {
-      cx,
-      cy,
-      r: 11,
-      fill: DOC_COLOR.fill,
-      stroke: DOC_COLOR.stroke,
-      'stroke-width': 1.2,
-    }),
-    h(
-      'text',
-      {
-        x: cx,
-        y: cy + 4,
-        'text-anchor': 'middle',
-        'font-size': 11,
-        fill: DOC_COLOR.stroke,
-      },
-      '📄',
-    ),
+    {
+      className,
+      transform: `translate(${cx - size / 2} ${cy - size / 2}) scale(${size / 24})`,
+      fill: ICON_DEFAULTS.fill,
+      stroke: color,
+      'stroke-width': ICON_DEFAULTS['stroke-width'],
+      'stroke-linecap': ICON_DEFAULTS['stroke-linecap'],
+      'stroke-linejoin': ICON_DEFAULTS['stroke-linejoin'],
+      'pointer-events': 'none',
+    },
+    ...ICONS[name].map(([tag, attrs]) => h(tag, attrs)),
   )
 }
 
+/** 手順書ありのマーク（fileText）。箱の右上に線だけで出す（BPMN のタスクマーカーと同じ流儀で背景は塗らない） */
+function docMark(cx: number, cy: number) {
+  return h('g', { className: DOC_CLASS }, iconShape('fileText', cx, cy, ICON_SIZE.doc, DOC_COLOR.stroke))
+}
+
 /**
- * 「▸ 中を見る N」バッジ。箱の下辺に敷く。
- * 文字だけの「▼ 中を見る（7 件）」は縮尺が落ちると真っ先に潰れるので、
- * 図形として描いて件数を右のバッジに分離した。
+ * バッジ内の並び（左から）: 余白 → chevron → 余白 → 「中を見る」 → 余白 → 区切り線 → 余白 → 件数 → 余白。
+ * 文字幅は実測せず 1 文字あたりの概算で置く（12px の CJK ≒ 12、11px semibold の数字 ≒ 7）。
+ */
+const BADGE_LAYOUT = { pad: 10, gap: 4, sep: 8, labelChar: 12, countChar: 7 }
+
+/**
+ * 「中を見る N」バッジ。箱の下辺に敷く。
+ * 文字だけの「▼ 中を見る（7 件）」は縮尺が落ちると真っ先に潰れるので、図形として描く。
+ * 枠線なしの淡いピル 1 つに chevron / 文字 / 区切り線 / 件数を同じ色で載せ、
+ * ホバーで地がアクセント色に反転する（anim.ts）。以前の「外枠 + 件数ピル」の二重構造はやめた。
  */
 function drillBadge(left: number, bottom: number, count: number) {
   const label = '中を見る'
   const countText = String(count)
-  const width = Math.max(BADGE_SIZE.minWidth, 62 + label.length * 12 + countText.length * 9)
+  const { pad, gap, sep, labelChar, countChar } = BADGE_LAYOUT
+  const iconSize = ICON_SIZE.badge
+  const labelW = label.length * labelChar
+  const countW = countText.length * countChar
+  const width = Math.max(BADGE_SIZE.minWidth, pad + iconSize + gap + labelW + sep + sep + countW + pad)
   const x = left + BADGE_SIZE.padX
   const y = bottom - BADGE_SIZE.height - BADGE_SIZE.padY
   const midY = y + BADGE_SIZE.height / 2
-  const pillW = 22 + countText.length * 8
+  const iconX = x + pad
+  const labelX = iconX + iconSize + gap
+  const dividerX = labelX + labelW + sep
+  const countX = dividerX + sep + countW / 2
+  // 区切り線はピル高の中央 12px ぶん
+  const dividerInset = (BADGE_SIZE.height - 12) / 2
   return h(
     'g',
     { className: BADGE_CLASS },
     h('rect', {
-      className: 'lfa-badge-bg',
+      className: BADGE_PART_CLASS.bg,
       x,
       y,
       width,
@@ -166,45 +193,46 @@ function drillBadge(left: number, bottom: number, count: number) {
       rx: BADGE_SIZE.height / 2,
       ry: BADGE_SIZE.height / 2,
       fill: BADGE_COLOR.fill,
-      stroke: BADGE_COLOR.stroke,
-      'stroke-width': 1.2,
     }),
+    iconShape('chevronRight', iconX + iconSize / 2, midY, iconSize, BADGE_COLOR.text, BADGE_PART_CLASS.icon),
     h(
       'text',
       {
-        className: 'lfa-badge-label',
-        x: x + 14,
+        className: BADGE_PART_CLASS.label,
+        x: labelX,
         y: midY + 4,
         'font-size': NODE_FONT.sub,
         fill: BADGE_COLOR.text,
       },
-      `▸ ${label}`,
+      label,
     ),
-    h('rect', {
-      x: x + width - pillW - 8,
-      y: y + 4,
-      width: pillW,
-      height: BADGE_SIZE.height - 8,
-      rx: (BADGE_SIZE.height - 8) / 2,
-      ry: (BADGE_SIZE.height - 8) / 2,
-      fill: BADGE_COLOR.stroke,
+    h('line', {
+      className: BADGE_PART_CLASS.divider,
+      x1: dividerX,
+      x2: dividerX,
+      y1: y + dividerInset,
+      y2: y + BADGE_SIZE.height - dividerInset,
+      stroke: BADGE_COLOR.text,
+      'stroke-width': 1,
+      opacity: 0.35,
     }),
     h(
       'text',
       {
-        x: x + width - pillW / 2 - 8,
+        className: BADGE_PART_CLASS.count,
+        x: countX,
         y: midY + 4,
         'text-anchor': 'middle',
         'font-size': NODE_FONT.small,
         'font-weight': 600,
-        fill: BADGE_COLOR.countText,
+        fill: BADGE_COLOR.text,
       },
       countText,
     ),
   )
 }
 
-/** 図形の上に重ねる装飾（バッジ / 📄）を列挙する。無ければ空配列 */
+/** 図形の上に重ねる装飾（バッジ / 手順書マーク）を列挙する。無ければ空配列 */
 function decorationsOf(model: {
   x: number
   y: number
@@ -258,10 +286,35 @@ export class AppDiamondNode extends DiamondNode {
   }
 }
 
+/**
+ * 線種ごとの矢尻。色 + 破線に加えて形でも区別できるようにする（配色監査: exception の赤と
+ * loopback の琥珀は色覚多様性下で近づき、loopback の琥珀は decision 枠とも溶ける）。
+ *   normal    = 終点 solid
+ *   loopback  = 終点 hollow（差し戻し。開いた矢尻）
+ *   exception = 終点 solid + 始点 circle（BPMN の境界イベント流。ここから外れる、を始点で示す）
+ * 形の種類は BaseEdge.getArrowPath の 'solid' | 'hollow' | 'diamond' | 'circle' | 'none' に限られる。
+ */
+const ARROW_OF: Record<LinkKind, Pick<LogicFlow.ArrowTheme, 'startArrowType' | 'endArrowType'>> = {
+  normal: { startArrowType: 'none', endArrowType: 'solid' },
+  loopback: { startArrowType: 'none', endArrowType: 'hollow' },
+  exception: { startArrowType: 'circle', endArrowType: 'solid' },
+}
+
 export class AppPolylineEdgeModel extends PolylineEdgeModel {
   getTextStyle() {
     const p = (this.properties ?? {}) as { textStyle?: Record<string, unknown> }
     return { ...super.getTextStyle(), ...(p.textStyle ?? {}) } as LogicFlow.EdgeTextTheme
+  }
+
+  /**
+   * 矢尻の形を properties.linkKind で決める。
+   * super は { ...edgeStyle, fill: stroke, stroke, ...theme.arrow } を返す（BaseEdgeModel.js）ので、
+   * 破線は theme.arrow の strokeDasharray 'none'（lf.ts）で矢尻に及ばない。
+   * marker id は marker-start-<id> / marker-end-<id> で、split の sp-u- / sp-l- 接頭辞が始点側にも効く。
+   */
+  getArrowStyle() {
+    const p = (this.properties ?? {}) as { linkKind?: LinkKind }
+    return { ...super.getArrowStyle(), ...ARROW_OF[p.linkKind ?? 'normal'] }
   }
 }
 
@@ -356,7 +409,7 @@ export function toLfNode(n: FlatNode, at: Placed, hasDoc = false): LFNodeConfig 
         strokeWidth: 1.5,
         radius: n.kind === 'start' || n.kind === 'end' ? 20 : 6,
       },
-      // 📄 マークが右上に載るので、その分だけ文字の幅を詰めておく
+      // 手順書マークが右上に載るので、その分だけ文字の幅を詰めておく
       textStyle: { ...textStyle, textWidth: at.w - (hasDoc ? 40 : 16) },
     },
   }
@@ -418,7 +471,7 @@ export function toLfEdge(link: FlowLink, index: number, route?: EdgeRoute): LFEd
 /**
  * グループを「中身の見えない名前だけの箱」として描く。
  *
- * 旧実装は 2 行目に「▼ 中を見る（7 件）」という文字を入れていたが、
+ * 旧実装は 2 行目に「中を見る（7 件）」という文字を入れていたが、
  * 縮尺が落ちると真っ先に潰れて読めなくなった（実測 110x35px）。
  * いまは名前を上寄せに置き、下辺にバッジ（drillBadge）を図形として敷く。
  * バッジは縮尺と無関係に「押せる帯」として残るので潰れ方が緩やかになる。
@@ -445,10 +498,11 @@ export function toDrillGroupNode(
       hasDoc,
       style: {
         fill: color.fill,
-        // 通常ノード（実線 1.5px）と明確に描き分ける: 太い破線 + アクセント色
-        stroke: CANVAS_COLOR.accent,
-        strokeWidth: 2.5,
-        strokeDasharray: '7 4',
+        // 通常ノード（radius 6〜8）より角を丸くした実線。「潜れる」はバッジ + cursor + ホバーの枠色で示す。
+        // 以前の「accent の太い破線 2.5px」は BPMN / Miro / FigJam で破線が「非表示・ドロップ領域」に
+        // 予約されているため業務フロー読者に逆に読まれうる（docs/draft/visual-language.md §1）
+        stroke: color.stroke,
+        strokeWidth: 1.5,
         radius: 10,
       },
       textStyle: {
@@ -465,7 +519,7 @@ export function toDrillGroupNode(
  * コンテキスト層のノードに付く class。CSS 側で opacity / フェードを当てる。
  *
  * かつては専用のノード型（ctx-layer-rect）+ 専用モデルで付けていたが、
- * ホバー / 選択 / 📄 を全ノードで共通に扱うためカスタム rect に統合した。
+ * ホバー / 選択 / 手順書マークを全ノードで共通に扱うためカスタム rect に統合した。
  * class は properties.isContextLayer を見て outerAttrs() が付ける。
  */
 export const CONTEXT_CLASS = 'lfa-ctx'
@@ -489,8 +543,7 @@ export function toContextNode(n: FlatNode, at: Placed, hasDoc = false): LFNodeCo
         fill: CONTEXT_COLOR.fill,
         stroke: CONTEXT_COLOR.stroke,
         strokeWidth: 1.2,
-        // グループ（潜れる）だけ破線にして、葉ノードと描き分ける
-        strokeDasharray: n.isContainer ? '5 4' : 'none',
+        // 破線は「非表示 / ドロップ領域」に読まれるので使わない（#6）。潜れる箱の区別はカーソルとホバーに任せる
         radius: 8,
       },
       textStyle: {
@@ -563,15 +616,18 @@ export function toSplitUpperNode(
       : CONTEXT_COLOR.stroke
   // 記号は凡例（★ = 今いる場所 / ⚡ = 右と繋がっている）と対応させる
   const head = isCurrent ? `★ ${n.label}` : isLinked ? `⚡ ${n.label}` : n.label
+  // 見取り図でも分岐はひし形で描く（外形寸法は他と同じ SPLIT.nodeSize。#17）
+  const isDecision = n.kind === 'decision'
   return {
     id: n.id,
-    type: NODE_TYPE.rect,
+    type: isDecision ? NODE_TYPE.diamond : NODE_TYPE.rect,
     x: at.x,
     y: at.y,
     text: note === undefined ? head : `${head}\n${note}`,
     properties: {
       width: at.w,
       height: at.h,
+      ...(isDecision ? { rx: at.w / 2, ry: at.h / 2 } : {}),
       splitState: state,
       isDrillTarget: n.isContainer,
       hasDoc,
@@ -580,8 +636,7 @@ export function toSplitUpperNode(
         fill: isCurrent ? base.fill : CONTEXT_COLOR.fill,
         stroke,
         strokeWidth: isCurrent ? 3 : isLinked ? 2 : 1.2,
-        // 潜れる（コンテナ）かどうかを破線で描き分ける
-        strokeDasharray: n.isContainer ? '5 4' : 'none',
+        // 破線は使わない（#6）。潜れる箱の区別はカーソルとホバーに任せる
         radius: 8,
       },
       textStyle: {
@@ -634,7 +689,6 @@ export function toNestGroupNode(n: NestNode, at: Placed): LFNodeConfig {
         fill: NEST_FILL[Math.min(n.level, NEST_FILL.length - 1)],
         stroke: linked ? SPLIT.linkedStroke : KIND_COLOR.group.stroke,
         strokeWidth: linked ? 2 : 1.2,
-        strokeDasharray: '5 4',
         radius: 8,
       },
       textStyle: {

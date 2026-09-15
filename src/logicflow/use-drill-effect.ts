@@ -40,6 +40,7 @@ import { createLogicFlow } from './lf'
 import type { LFNodeConfig } from './nodes'
 import {
   BADGE_CLASS,
+  EDGE_TYPE,
   applySelection,
   edgeStyleOf,
   registerAppNodes,
@@ -51,7 +52,7 @@ import {
 type NodeEventArgs = { data?: { id?: string }; e?: MouseEvent }
 
 /**
- * 「▸ 中を見る」バッジの上で押されたか。
+ * 「中を見る」バッジの上で押されたか。
  * 単一クリックは原則「選択」だが、バッジだけは押した瞬間に潜れるほうが自然なので例外にする。
  */
 function isBadgeHit(e: MouseEvent | undefined): boolean {
@@ -237,7 +238,7 @@ export function useDrillEffect(params: DrillEffectParams) {
 
       lf = createLogicFlow(host)
       lfRef.current = lf
-      // ホバー / 選択 / バッジ / 📄 を持つカスタムノード型（rect・diamond）を登録する
+      // ホバー / 選択 / バッジ / 手順書マークを持つカスタムノード型（rect・diamond）を登録する
       registerAppNodes(lf)
 
       const docIds = docIdsOf(doc)
@@ -358,7 +359,8 @@ export function useDrillEffect(params: DrillEffectParams) {
           const kind = (e.properties?.linkKind as LinkKind | undefined) ?? 'normal'
           lf.addEdge({
             id: `repair-${repaired++}`,
-            type: 'polyline',
+            // 自前配線は無いが、矢尻の形（loopback hollow / exception circle）を揃えるため同じ edge model を使う
+            type: EDGE_TYPE.polyline,
             sourceNodeId: s,
             targetNodeId: t,
             text: '',
@@ -443,7 +445,7 @@ export function useDrillEffect(params: DrillEffectParams) {
       /* --- クリックの割り当て（両担当が守る契約） ---
        *   単一クリック  → 選択（表示階層は変えない）
        *   ダブルクリック → 潜る（グループのみ）
-       *   「▸ 中を見る」バッジの単一クリックだけは例外で、その場で潜る
+       *   「中を見る」バッジの単一クリックだけは例外で、その場で潜る
        *   空白クリック  → 選択解除
        * 擬似ノード（境界マーカーの __edge: … など）は doc を持てないので選択させない。 */
       const onNodeClick = (args: NodeEventArgs) => {

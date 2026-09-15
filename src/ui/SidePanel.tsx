@@ -17,6 +17,8 @@ import type { ViewMode } from '../flow/view-props'
 import type { TestCase } from '../flow/cases'
 import { JsonPanel } from './JsonPanel'
 import { InfoPanel } from './InfoPanel'
+import { ICON_SIZE } from '../flow/theme'
+import { Icon } from '../icons/Icon'
 
 type Tab = 'json' | 'info'
 
@@ -89,8 +91,15 @@ export function SidePanel(props: Props) {
           {testCase && <span className="dot" title="テストケースの説明があります" />}
         </button>
         <div className="spacer" />
-        <button onClick={() => setFull((v) => !v)} data-active={full} title="パネルをステージ全体へ広げる">
-          {full ? '全画面を解除' : '全画面'}
+        {/* 全画面 / 解除はアイコンだけ。文言は title と aria-label に残す */}
+        <button
+          className="icon-btn icon-only"
+          onClick={() => setFull((v) => !v)}
+          data-active={full}
+          title={full ? '全画面を解除' : 'パネルをステージ全体へ広げる'}
+          aria-label={full ? '全画面を解除' : '全画面'}
+        >
+          <Icon name={full ? 'minimize2' : 'maximize2'} size={ICON_SIZE.button} />
         </button>
       </div>
 

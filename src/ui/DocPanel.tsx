@@ -22,7 +22,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { FlowStep, StepKind } from '../flow/schema'
-import { KIND_COLOR } from '../flow/theme'
+import { ICON_SIZE, KIND_COLOR } from '../flow/theme'
+import { Icon } from '../icons/Icon'
 import { renderMarkdown } from './markdown'
 import { clampWidth, parseStoredWidth } from './doc-panel-width'
 
@@ -277,17 +278,25 @@ export function DocPanel({ step, editable, onChange, onClose }: Props) {
               </button>
             </div>
           )}
+          {/* 全画面 / 戻すはアイコンだけ。文言は title（ツールチップ）と aria-label に残す */}
           <button
             type="button"
-            className="dp-full"
+            className="dp-full icon-btn icon-only"
             data-active={full}
             onClick={() => setFull((v) => !v)}
-            title="手順書をキャンバス全体へ広げる"
+            title={full ? '全画面を戻す' : '手順書をキャンバス全体へ広げる'}
+            aria-label={full ? '全画面を戻す' : '全画面'}
           >
-            {full ? '戻す' : '全画面'}
+            <Icon name={full ? 'minimize2' : 'maximize2'} size={ICON_SIZE.button} />
           </button>
-          <button type="button" className="dp-close" onClick={onClose} title="閉じる（選択を解除）">
-            ×
+          <button
+            type="button"
+            className="dp-close icon-btn icon-only"
+            onClick={onClose}
+            title="閉じる（選択を解除）"
+            aria-label="閉じる"
+          >
+            <Icon name="x" size={ICON_SIZE.button} />
           </button>
         </div>
 
@@ -431,13 +440,11 @@ const DOC_PANEL_CSS = `
   overflow-wrap: anywhere;
 }
 .dp-modes { display: flex; gap: 4px; }
-.dp-modes button,
-.dp-full { padding: 4px 9px; font-size: 12px; white-space: nowrap; }
-.dp-close {
-  padding: 2px 9px;
-  font-size: 15px;
-  line-height: 1.3;
-}
+.dp-modes button { padding: 4px 9px; font-size: 12px; white-space: nowrap; }
+/* アイコンだけのボタン（全画面 / 閉じる）。font-size を切替ボタンと揃えると高さも揃う
+   （styles.css の .icon-only が font の行高で支柱を立てるため） */
+.dp-full,
+.dp-close { padding: 4px 6px; font-size: 12px; }
 .dp-meta {
   display: flex;
   flex-wrap: wrap;

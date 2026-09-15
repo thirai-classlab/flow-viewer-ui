@@ -22,6 +22,8 @@ import { pathTo } from '../flow/flatten'
 
 import { dataSelOptions } from '../flow/data-source'
 import type { DataSel } from '../flow/data-source'
+import { ICON_SIZE } from '../flow/theme'
+import { Icon } from '../icons/Icon'
 
 /**
  * 画面のモード。
@@ -67,12 +69,17 @@ type Props = {
  * 外側クリックと Esc で閉じる。子は close を受け取り、選んだら自分で閉じられる。
  */
 function Popover(props: {
-  label: string
+  /** ボタンの中身。文字と <Icon> を並べられるよう ReactNode */
+  label: ReactNode
   title: string
+  /** アイコンだけのボタンは読み上げ用の名前を別に渡す */
+  ariaLabel?: string
+  /** アイコンだけのボタンは左右の余白を詰める（styles.css の .icon-only） */
+  iconOnly?: boolean
   align?: 'left' | 'right'
   children: (close: () => void) => ReactNode
 }) {
-  const { label, title, align = 'right', children } = props
+  const { label, title, ariaLabel, iconOnly = false, align = 'right', children } = props
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
 
@@ -95,7 +102,14 @@ function Popover(props: {
 
   return (
     <div className="popover" ref={ref}>
-      <button data-active={open} title={title} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+      <button
+        className={iconOnly ? 'icon-btn icon-only' : 'icon-btn'}
+        data-active={open}
+        title={title}
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
         {label}
       </button>
       {open && (
@@ -163,7 +177,9 @@ export function Toolbar(props: Props) {
           </button>
           {crumbs.map((id) => (
             <span key={id} className="crumb">
-              <span className="sep">›</span>
+              <span className="sep">
+                <Icon name="chevronRight" size={ICON_SIZE.chip} />
+              </span>
               <button data-active={id === drillRoot} onClick={() => onDrillDown(id)}>
                 {flat.byId.get(id)?.label ?? id}
               </button>
@@ -173,18 +189,28 @@ export function Toolbar(props: Props) {
 
         {drillRoot !== null && (
           <button
-            className="ghost"
+            className="ghost icon-btn"
             onClick={() => onDrillDown(flat.byId.get(drillRoot)?.parentId ?? null)}
             title="1 つ上の階層に戻る"
           >
-            ↑ 上へ
+            <Icon name="arrowUp" size={ICON_SIZE.button} />
+            上へ
           </button>
         )}
 
         {/* 潜る先の一覧。キャンバス上のグループを直接押しても潜れるが、
             「この階層に何があるか」を一覧で確かめたいときの保険として残す */}
         {hasDrillNav && enterable.length > 0 && (
-          <Popover label="中へ ▾" title="この階層から潜れるグループ" align="left">
+          <Popover
+            label={
+              <>
+                中へ
+                <Icon name="chevronDown" size={ICON_SIZE.button} />
+              </>
+            }
+            title="この階層から潜れるグループ"
+            align="left"
+          >
             {(close) => (
               <div className="menu-list">
                 {enterable.map((id) => (
@@ -221,15 +247,22 @@ export function Toolbar(props: Props) {
 
         {/* 配色。ライトが既定で、ダークは切替で残している */}
         <button
+          className="icon-btn icon-only"
           onClick={() => onTheme(theme === 'dark' ? 'light' : 'dark')}
           title={theme === 'dark' ? 'ライトテーマにする' : 'ダークテーマにする'}
-          aria-label="テーマ切替"
+          aria-label={theme === 'dark' ? 'ライトテーマにする' : 'ダークテーマにする'}
+          aria-pressed={theme === 'dark'}
         >
-          {theme === 'dark' ? '☀' : '☾'}
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={ICON_SIZE.button} />
         </button>
 
         {/* 見え方の微調整。常時出す必要が無いものはここに畳んである */}
-        <Popover label="⚙" title="表示の詳細設定">
+        <Popover
+          label={<Icon name="settings2" size={ICON_SIZE.button} />}
+          title="表示の詳細設定"
+          ariaLabel="表示の詳細設定"
+          iconOnly
+        >
           {(close) => (
             <div className="menu">
               {/* 既定の視野は読める縮尺（0.85）で止めてはみ出しをパンに任せる。
@@ -249,11 +282,13 @@ export function Toolbar(props: Props) {
 
               <div className="menu-row">
                 <span className="label">方向</span>
-                <button data-active={direction === 'RIGHT'} onClick={() => onDirection('RIGHT')}>
-                  横 →
+                <button className="icon-btn" data-active={direction === 'RIGHT'} onClick={() => onDirection('RIGHT')}>
+                  横
+                  <Icon name="arrowRight" size={ICON_SIZE.button} />
                 </button>
-                <button data-active={direction === 'DOWN'} onClick={() => onDirection('DOWN')}>
-                  縦 ↓
+                <button className="icon-btn" data-active={direction === 'DOWN'} onClick={() => onDirection('DOWN')}>
+                  縦
+                  <Icon name="arrowDown" size={ICON_SIZE.button} />
                 </button>
               </div>
 

@@ -13,6 +13,8 @@ import type { UiMode } from './ui/Toolbar'
 import { SidePanel } from './ui/SidePanel'
 import { DocPanel } from './ui/DocPanel'
 import { CanvasErrorBoundary } from './ui/ErrorBoundary'
+import { Icon } from './icons/Icon'
+import { ICON_SIZE } from './flow/theme'
 
 /**
  * シェル。持っているのは「今どう見ているか」の状態だけで、描画は FlowCanvas に、
@@ -329,8 +331,8 @@ export default function App() {
           {!isEdit && hintOpen && (
             <div className="hint-bubble" role="note">
               <span>クリックで詳細、ダブルクリックでグループの中へ。</span>
-              <button className="ghost" onClick={dismissHint} title="今後表示しない">
-                ✕
+              <button className="ghost icon-btn icon-only" onClick={dismissHint} title="今後表示しない" aria-label="今後表示しない">
+                <Icon name="x" size={ICON_SIZE.button} />
               </button>
             </div>
           )}

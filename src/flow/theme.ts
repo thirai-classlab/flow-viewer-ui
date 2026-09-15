@@ -24,12 +24,19 @@ export const NODE_SIZE: Record<StepKind, { width: number; height: number }> = {
 
 /**
  * 折りたたんだグループ / ドリルダウンで「名前だけの箱」を描くときのサイズ。
- * 下辺に「▸ 中を見る N」バッジ（BADGE_SIZE）を敷くので、その分の高さを含む。
+ * 下辺に「中を見る N」バッジ（BADGE_SIZE）を敷くので、その分の高さを含む。
  */
 export const COLLAPSED_SIZE = { width: 268, height: 108 }
 
 /** グループの箱に敷く「中を見る」バッジの寸法。nodes.ts のカスタム view が描く */
 export const BADGE_SIZE = { height: 26, padX: 12, padY: 10, minWidth: 104 }
+
+/**
+ * アイコン（Lucide、src/icons）の 1 辺の px。
+ * キャンバス側はノードの実寸に対する比率で決めた（バッジ高 26 に 12、箱の隅に 14）。
+ * ツールバーのボタンは文字 13px の行高に収まる 16、チップ（11px）の中は 12。
+ */
+export const ICON_SIZE = { badge: 12, doc: 14, button: 16, chip: 12 }
 
 /** ノードのラベル文字サイズ。12px を切ると日本語が潰れるので下限は 11 */
 export const NODE_FONT = { label: 13, sub: 12, small: 11 }
@@ -134,20 +141,25 @@ export const FIT = {
 
 // --- 操作のアフォーダンス（クリックできるものを見た目で示す） -----------------
 
-/** 潜れるノード（グループ）のホバー。枠が光り、カーソルが pointer になる */
-export const HOVER_COLOR = { stroke: 'var(--fv-hover-stroke)', glow: 'var(--fv-hover-glow)' }
-/** 選択中ノード（selectedId）の枠。ホバーより強い色にして 1 つだけ目立たせる */
-export const SELECT_COLOR = { stroke: 'var(--fv-select-stroke)', glow: 'var(--fv-select-glow)' }
-/** 「▸ 中を見る」バッジの色 */
+/**
+ * 潜れるノード（グループ）のホバー。枠がアクセント色 2px になり、カーソルが pointer になる。
+ * glow（drop-shadow）は #6 で廃止した（太い破線 + glow の重なりがチープに見える主因だった）。
+ */
+export const HOVER_COLOR = { stroke: 'var(--fv-accent)', strokeWidth: 2 }
+/** 選択中ノード（selectedId）の枠。ホバーより強い色 + 太さで 1 つだけ目立たせる */
+export const SELECT_COLOR = { stroke: 'var(--fv-select-stroke)', strokeWidth: 2.5 }
+/**
+ * 「中を見る N」バッジの色。枠線は無く、淡い地に文字 / chevron / 件数を同じ色で載せる。
+ * ホバーはアクセント色に反転する（hoverFill / hoverText）。
+ */
 export const BADGE_COLOR = {
   fill: 'var(--fv-badge-fill)',
-  stroke: 'var(--fv-badge-stroke)',
   text: 'var(--fv-badge-text)',
-  /** 件数ピル（stroke 色で塗る）の上に載せる文字 */
-  countText: 'var(--fv-badge-count-text)',
+  hoverFill: 'var(--fv-accent)',
+  hoverText: 'var(--fv-accent-contrast)',
 }
-/** doc（手順書）を持つノードに出す 📄 マークの色 */
-export const DOC_COLOR = { fill: 'var(--fv-doc-fill)', stroke: 'var(--fv-doc-stroke)' }
+/** doc（手順書）を持つノードに出す fileText アイコンの線色。背景は塗らない */
+export const DOC_COLOR = { stroke: 'var(--fv-doc-stroke)' }
 
 // --- フォーカス + コンテキスト表示 ---------------------------------------
 
