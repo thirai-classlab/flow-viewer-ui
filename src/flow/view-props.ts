@@ -19,6 +19,15 @@ import type { FlatDoc } from './flatten'
  */
 export type ViewMode = 'drilldown' | 'split' | 'nested'
 
+/**
+ * 配色テーマ。既定はライト。
+ * 実体は styles.css の CSS 変数（--fv-*）で、ルート要素の data-theme 属性で切り替える。
+ * キャンバス側のコードは色の実値を持たない（theme.ts が var() を返す）。
+ */
+export type Theme = 'light' | 'dark'
+
+export const DEFAULT_THEME: Theme = 'light'
+
 export type FlowViewProps = {
   /** 真実源の JSON */
   doc: FlowDoc

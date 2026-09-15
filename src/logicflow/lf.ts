@@ -8,7 +8,7 @@ import '@logicflow/core/es/index.css'
 import '@logicflow/extension/es/index.css'
 
 import type { ViewMode } from '../flow/view-props'
-import { LINK_COLOR } from '../flow/theme'
+import { CANVAS_COLOR, LINK_COLOR } from '../flow/theme'
 import type { Placed } from './layout'
 
 export type CollapseEventArgs = { collapse: boolean; nodeModel: { id: string } }
@@ -25,15 +25,15 @@ const THEME = {
   baseEdge: { stroke: LINK_COLOR.normal, strokeWidth: 1.4 },
   polyline: { stroke: LINK_COLOR.normal, strokeWidth: 1.4 },
   arrow: { offset: 8, verticalLength: 4, strokeDasharray: 'none' },
-  nodeText: { color: '#e5ebfa', fontSize: 12, overflowMode: 'autoWrap' as const, textWidth: 150 },
+  nodeText: { color: CANVAS_COLOR.text, fontSize: 12, overflowMode: 'autoWrap' as const, textWidth: 150 },
   edgeText: {
-    color: '#c7d0e8',
+    color: CANVAS_COLOR.linkText,
     fontSize: 11,
     textWidth: 90,
     overflowMode: 'autoWrap' as const,
-    background: { fill: '#12141c', stroke: 'none', wrapPadding: '2px,4px' },
+    background: { fill: CANVAS_COLOR.bg, stroke: 'none', wrapPadding: '2px,4px' },
   },
-  outline: { stroke: '#6b8afd', strokeDasharray: '3,3' },
+  outline: { stroke: CANVAS_COLOR.accent, strokeDasharray: '3,3' },
 }
 
 /**
@@ -49,8 +49,8 @@ const THEME = {
 export function createLogicFlow(container: HTMLElement): LogicFlow {
   return new LogicFlow({
     container,
-    grid: { size: 16, visible: true, type: 'dot', config: { color: '#252a38', thickness: 1 } },
-    background: { backgroundColor: '#12141c' },
+    grid: { size: 16, visible: true, type: 'dot', config: { color: CANVAS_COLOR.grid, thickness: 1 } },
+    background: { backgroundColor: CANVAS_COLOR.bg },
     isSilentMode: true,
     textEdit: false,
     adjustEdge: false,

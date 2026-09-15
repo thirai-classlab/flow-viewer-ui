@@ -487,7 +487,7 @@ const DOC_PANEL_CSS = `
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
 }
-.markdown-body strong { font-weight: 700; color: #fff; }
+.markdown-body strong { font-weight: 700; color: var(--text, #dfe4f0); }
 .markdown-body code {
   background: var(--bg-raised, #1f2430);
   border: 1px solid var(--border, #2c3242);

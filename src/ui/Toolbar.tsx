@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import type { Direction } from '../flow/schema'
-import type { ViewMode } from '../flow/view-props'
+import type { Theme, ViewMode } from '../flow/view-props'
 import type { FlatDoc } from '../flow/flatten'
 import { pathTo } from '../flow/flatten'
 
@@ -56,6 +56,8 @@ type Props = {
   onNestPath: (v: boolean) => void
   sideOpen: boolean
   onToggleSide: () => void
+  theme: Theme
+  onTheme: (t: Theme) => void
 }
 
 /**
@@ -130,6 +132,8 @@ export function Toolbar(props: Props) {
     onNestPath,
     sideOpen,
     onToggleSide,
+    theme,
+    onTheme,
   } = props
 
   const crumbs = drillRoot ? pathTo(drillRoot, flat.parentOf) : []
@@ -211,6 +215,15 @@ export function Toolbar(props: Props) {
             入れ子
           </button>
         </div>
+
+        {/* 配色。ライトが既定で、ダークは切替で残している */}
+        <button
+          onClick={() => onTheme(theme === 'dark' ? 'light' : 'dark')}
+          title={theme === 'dark' ? 'ライトテーマにする' : 'ダークテーマにする'}
+          aria-label="テーマ切替"
+        >
+          {theme === 'dark' ? '☀' : '☾'}
+        </button>
 
         {/* 見え方の微調整。常時出す必要が無いものはここに畳んである */}
         <Popover label="⚙" title="表示の詳細設定">

@@ -123,7 +123,7 @@ function toBoundaryNode(b: Boundary, at: Placed): LFNodeConfig {
       width: at.w,
       height: at.h,
       isBoundary: true,
-      style: { fill: '#171a24', stroke, strokeWidth: 1.4, strokeDasharray: '4 3', radius: 18 },
+      style: { fill: 'var(--fv-boundary-fill)', stroke, strokeWidth: 1.4, strokeDasharray: '4 3', radius: 18 },
       textStyle: {
         color: stroke,
         fontSize: NODE_FONT.sub,

@@ -32,7 +32,7 @@ import type LogicFlow from '@logicflow/core'
 import type { FlowViewProps } from '../flow/view-props'
 import { pathTo } from '../flow/flatten'
 import { MAX_NEST_LEVELS } from '../flow/collapse'
-import { CONTEXT_COLOR, SPLIT } from '../flow/theme'
+import { CANVAS_COLOR, CHIP_COLOR, CONTEXT_COLOR, SPLIT } from '../flow/theme'
 import type { Viewport } from './anim'
 import { ANIM_CLASS, HOST_CLASS, PANE_IN_CLASS } from './anim'
 import type { Placed } from './layout'
@@ -205,6 +205,8 @@ export function FlowCanvas(props: FlowViewProps) {
   const upperParentId = currentNode?.parentId
   // 経路入れ子で描いているか（最上位は上位階層自体が無いので対象外）
   const useNestUi = isSplit && nestPath && drillRoot !== null
+  // 圏外リンクが 0 本なら ok、あれば warn のチップ色。text / border / bg を同じ組で揃える
+  const nestChip = nestInfo !== null && nestInfo.outOfScope === 0 ? CHIP_COLOR.ok : CHIP_COLOR.warn
   /* 左ペイン幅。入れ子は横に広がるので経路の深さに応じて広げる。
      effect 側の視野合わせも同じ式で計算している。 */
   const paneRatio = useNestUi ? nestUpperRatio(crumbs.length) : SPLIT.upperRatio
@@ -257,7 +259,7 @@ export function FlowCanvas(props: FlowViewProps) {
               {/* 経路が MAX_NEST_LEVELS を超えて畳まれた祖先。クリックでその階層へ戻る */}
               {useNestUi && nestInfo !== null && nestInfo.omitted.length > 0 && (
                 <div style={nestOmitStyle}>
-                  <span style={{ color: '#6d7690', flex: '0 0 auto' }}>
+                  <span style={{ color: CANVAS_COLOR.textDim, flex: '0 0 auto' }}>
                     ⋯ 上位 {nestInfo.omitted.length} 階層
                   </span>
                   {nestInfo.omitted.map((a) => (
@@ -303,7 +305,7 @@ export function FlowCanvas(props: FlowViewProps) {
           )}
           <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
             <div style={splitHeaderStyle}>
-              <span style={{ color: '#e5ebfa' }}>{lowerTitle}</span> の中身
+              <span style={{ color: CANVAS_COLOR.text }}>{lowerTitle}</span> の中身
               {drillRoot !== null && (
                 <button
                   type="button"
@@ -313,7 +315,7 @@ export function FlowCanvas(props: FlowViewProps) {
                     background: 'none',
                     border: `1px solid ${SPLIT.divider}`,
                     borderRadius: 4,
-                    color: '#8d97ad',
+                    color: SPLIT.headerText,
                     cursor: 'pointer',
                     font: 'inherit',
                     padding: '0 6px',
@@ -381,9 +383,9 @@ export function FlowCanvas(props: FlowViewProps) {
           <span
             style={{
               fontSize: 11,
-              color: '#8d97ad',
+              color: CANVAS_COLOR.textDim,
               pointerEvents: 'auto',
-              background: 'rgba(18,20,28,0.82)',
+              background: CHIP_COLOR.bg,
               borderRadius: 4,
               padding: '2px 6px',
             }}
@@ -391,7 +393,7 @@ export function FlowCanvas(props: FlowViewProps) {
             <button
               type="button"
               onClick={() => onDrillDown(null)}
-              style={{ pointerEvents: 'auto', background: 'none', border: 'none', color: '#8d97ad', cursor: 'pointer', padding: 0 }}
+              style={{ pointerEvents: 'auto', background: 'none', border: 'none', color: CANVAS_COLOR.textDim, cursor: 'pointer', padding: 0 }}
             >
               トップ
             </button>
@@ -399,12 +401,12 @@ export function FlowCanvas(props: FlowViewProps) {
               <span key={id}>
                 {' / '}
                 {i === crumbs.length - 1 ? (
-                  <span style={{ color: '#e5ebfa' }}>{flat.byId.get(id)?.label ?? id}</span>
+                  <span style={{ color: CANVAS_COLOR.text }}>{flat.byId.get(id)?.label ?? id}</span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => onDrillDown(id)}
-                    style={{ background: 'none', border: 'none', color: '#8d97ad', cursor: 'pointer', padding: 0 }}
+                    style={{ background: 'none', border: 'none', color: CANVAS_COLOR.textDim, cursor: 'pointer', padding: 0 }}
                   >
                     {flat.byId.get(id)?.label ?? id}
                   </button>
@@ -417,7 +419,7 @@ export function FlowCanvas(props: FlowViewProps) {
             操作を見せているので、ここで文章にはしない（説明文がフローの上を覆っていた）。
             記号の意味を言葉でしか示せない split / nested だけ短い注記を残す。 */}
         {viewMode !== 'drilldown' && (
-          <span style={{ fontSize: 11, color: '#8d97ad' }}>
+          <span style={{ fontSize: 11, color: CANVAS_COLOR.textDim }}>
             {isSplit
               ? drillRoot === null
                 ? '最上位は全画面 1 ペイン。箱の中へ入ると左に上位階層のペインが開く'
@@ -431,9 +433,9 @@ export function FlowCanvas(props: FlowViewProps) {
           <span
             style={{
               fontSize: 11,
-              color: nestInfo.outOfScope === 0 ? '#7fc99a' : '#e8b86b',
-              border: `1px solid ${nestInfo.outOfScope === 0 ? '#2f5a41' : '#6a5326'}`,
-              background: 'rgba(20,30,24,0.85)',
+              color: nestChip.text,
+              border: `1px solid ${nestChip.border}`,
+              background: nestChip.bg,
               borderRadius: 4,
               padding: '2px 6px',
             }}
@@ -449,7 +451,7 @@ export function FlowCanvas(props: FlowViewProps) {
               fontSize: 11,
               color: SPLIT.linkedStroke,
               border: `1px solid ${SPLIT.linkedStroke}`,
-              background: 'rgba(30,27,16,0.85)',
+              background: CHIP_COLOR.warn.bg,
               borderRadius: 4,
               padding: '2px 6px',
             }}
@@ -465,7 +467,7 @@ export function FlowCanvas(props: FlowViewProps) {
               fontSize: 11,
               color: CONTEXT_COLOR.text,
               border: `1px solid ${CONTEXT_COLOR.stroke}`,
-              background: 'rgba(25,28,38,0.85)',
+              background: CHIP_COLOR.bg,
               borderRadius: 4,
               padding: '2px 6px',
             }}
@@ -478,9 +480,9 @@ export function FlowCanvas(props: FlowViewProps) {
           <span
             style={{
               fontSize: 11,
-              color: '#e8b86b',
-              border: '1px solid #6a5326',
-              background: 'rgba(60,45,18,0.75)',
+              color: CHIP_COLOR.warn.text,
+              border: `1px solid ${CHIP_COLOR.warn.border}`,
+              background: CHIP_COLOR.warn.bg,
               borderRadius: 4,
               padding: '2px 6px',
             }}
@@ -500,8 +502,8 @@ export function FlowCanvas(props: FlowViewProps) {
             inset: 0,
             zIndex: 3,
             padding: 16,
-            background: 'rgba(18,20,28,0.94)',
-            color: '#ff6b6b',
+            background: CHIP_COLOR.overlayBg,
+            color: CHIP_COLOR.overlayErrText,
             font: '12px/1.6 ui-monospace, monospace',
             whiteSpace: 'pre-wrap',
             overflow: 'auto',

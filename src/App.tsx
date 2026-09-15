@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlowCanvas } from './logicflow'
-import type { ViewMode } from './flow/view-props'
+import type { Theme, ViewMode } from './flow/view-props'
+import { DEFAULT_THEME } from './flow/view-props'
 import type { CollapseState, Direction, FlowDoc, FlowStep } from './flow/schema'
 import { flattenDoc } from './flow/flatten'
 import { toggleCollapsed } from './flow/collapse'
@@ -29,6 +30,17 @@ import { CanvasErrorBoundary } from './ui/ErrorBoundary'
 
 /** 初回ヒントを閉じたことを覚えておく鍵 */
 const HINT_KEY = 'flow-viewer:hint-dismissed'
+/** 選んだテーマを覚えておく鍵 */
+const THEME_KEY = 'flow-viewer:theme'
+
+/** 前回選んだテーマ。無ければ既定（ライト） */
+function loadTheme(): Theme {
+  try {
+    return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : DEFAULT_THEME
+  } catch {
+    return DEFAULT_THEME
+  }
+}
 
 /** doc の木から id のステップを探す。見つからなければ null */
 function findStep(steps: readonly FlowStep[], id: string): FlowStep | null {
@@ -69,6 +81,8 @@ export default function App() {
   // split の左ペインを「経路を入れ子で展開」で描く（既定 ON）
   const [nestPath, setNestPath] = useState(true)
   const [sideOpen, setSideOpen] = useState(true)
+  // 配色。ルート要素の data-theme で CSS 変数が切り替わる（キャンバスも同じ変数を読む）
+  const [theme, setTheme] = useState<Theme>(loadTheme)
   // 選択中のノード。ドリルダウンとは別概念で、選んでも表示階層は変わらない
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -182,6 +196,21 @@ export default function App() {
     setDrillRoot(null)
   }, [])
 
+  // data-theme は .app に付けるが、Safari のオーバースクロールでは html / body の地が
+  // 一瞬見える。デモ（＝ホスト役）の責務として <html> にも同じ値を写しておく
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
+
+  const handleTheme = useCallback((t: Theme) => {
+    setTheme(t)
+    try {
+      localStorage.setItem(THEME_KEY, t)
+    } catch {
+      // 覚えられなくても次回ライトに戻るだけなので、失敗は無視してよい
+    }
+  }, [])
+
   const dismissHint = useCallback(() => {
     setHintOpen(false)
     try {
@@ -197,7 +226,7 @@ export default function App() {
   const showDoc = selectedStep !== null && (isEdit || (selectedStep.doc ?? '').trim() !== '')
 
   return (
-    <div className="app">
+    <div className="app" data-theme={theme}>
       <Toolbar
         mode={mode}
         onMode={setMode}
@@ -224,6 +253,8 @@ export default function App() {
         onNestPath={setNestPath}
         sideOpen={sideOpen}
         onToggleSide={() => setSideOpen((v) => !v)}
+        theme={theme}
+        onTheme={handleTheme}
       />
 
       {/* テストケースは「何を検証するデータか」が分かって初めて意味を持つ。

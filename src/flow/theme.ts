@@ -34,18 +34,51 @@ export const BADGE_SIZE = { height: 26, padX: 12, padY: 10, minWidth: 104 }
 /** ノードのラベル文字サイズ。12px を切ると日本語が潰れるので下限は 11 */
 export const NODE_FONT = { label: 13, sub: 12, small: 11 }
 
+/*
+ * 色はすべて CSS 変数（styles.css の --fv-*）を参照する。
+ * 実値をここに持たないのは、ライト / ダークの切替とホスト側からの上書きを
+ * CSS だけで済ませるため。SVG の fill / stroke 属性も var() を受け付ける。
+ */
+const kindColor = (kind: StepKind) => ({
+  fill: `var(--fv-node-${kind}-fill)`,
+  stroke: `var(--fv-node-${kind}-stroke)`,
+  text: `var(--fv-node-${kind}-text)`,
+})
+
 export const KIND_COLOR: Record<StepKind, { fill: string; stroke: string; text: string }> = {
-  start: { fill: '#1f3d2b', stroke: '#4ea373', text: '#dff5e8' },
-  end: { fill: '#3d2028', stroke: '#a3596b', text: '#f7e2e8' },
-  task: { fill: '#232a3d', stroke: '#5b6ea8', text: '#e5ebfa' },
-  decision: { fill: '#3d3520', stroke: '#b39247', text: '#f8f0d9' },
-  group: { fill: '#1b1f2b', stroke: '#4a5578', text: '#c9d3ee' },
+  start: kindColor('start'),
+  end: kindColor('end'),
+  task: kindColor('task'),
+  decision: kindColor('decision'),
+  group: kindColor('group'),
 }
 
 export const LINK_COLOR: Record<LinkKind, string> = {
-  normal: '#7c8bb5',
-  exception: '#c9736b',
-  loopback: '#c1a05a',
+  normal: 'var(--fv-link-normal)',
+  exception: 'var(--fv-link-exception)',
+  loopback: 'var(--fv-link-loopback)',
+}
+
+/** キャンバスの地と、線上ラベルの文字色 */
+export const CANVAS_COLOR = {
+  bg: 'var(--fv-canvas-bg)',
+  grid: 'var(--fv-grid)',
+  text: 'var(--fv-text)',
+  textDim: 'var(--fv-text-dim)',
+  linkText: 'var(--fv-link-text)',
+  accent: 'var(--fv-accent)',
+}
+
+/**
+ * キャンバスの隅に重ねる情報チップと、初期化失敗時のオーバーレイ。
+ * ok / warn は text と border を別シェードにして、枠が文字より一段沈むようにしている。
+ */
+export const CHIP_COLOR = {
+  bg: 'var(--fv-chip-bg)',
+  ok: { bg: 'var(--fv-chip-ok-bg)', text: 'var(--fv-chip-ok-text)', border: 'var(--fv-chip-ok-border)' },
+  warn: { bg: 'var(--fv-chip-warn-bg)', text: 'var(--fv-chip-warn-text)', border: 'var(--fv-chip-warn-border)' },
+  overlayBg: 'var(--fv-overlay-bg)',
+  overlayErrText: 'var(--fv-overlay-err-text)',
 }
 
 export const LINK_DASH: Record<LinkKind, string | undefined> = {
@@ -95,24 +128,35 @@ export const FIT = {
 // --- 操作のアフォーダンス（クリックできるものを見た目で示す） -----------------
 
 /** 潜れるノード（グループ）のホバー。枠が光り、カーソルが pointer になる */
-export const HOVER_COLOR = { stroke: '#9db4ff', glow: 'rgba(107,138,253,0.55)' }
+export const HOVER_COLOR = { stroke: 'var(--fv-hover-stroke)', glow: 'var(--fv-hover-glow)' }
 /** 選択中ノード（selectedId）の枠。ホバーより強い色にして 1 つだけ目立たせる */
-export const SELECT_COLOR = { stroke: '#ffd166', glow: 'rgba(255,209,102,0.5)' }
+export const SELECT_COLOR = { stroke: 'var(--fv-select-stroke)', glow: 'var(--fv-select-glow)' }
 /** 「▸ 中を見る」バッジの色 */
-export const BADGE_COLOR = { fill: '#28407c', stroke: '#7d99ff', text: '#e4ebff' }
+export const BADGE_COLOR = {
+  fill: 'var(--fv-badge-fill)',
+  stroke: 'var(--fv-badge-stroke)',
+  text: 'var(--fv-badge-text)',
+  /** 件数ピル（stroke 色で塗る）の上に載せる文字 */
+  countText: 'var(--fv-badge-count-text)',
+}
 /** doc（手順書）を持つノードに出す 📄 マークの色 */
-export const DOC_COLOR = { fill: '#1d2536', stroke: '#8fa0cc' }
+export const DOC_COLOR = { fill: 'var(--fv-doc-fill)', stroke: 'var(--fv-doc-stroke)' }
 
 // --- フォーカス + コンテキスト表示 ---------------------------------------
 
-/** コンテキスト層（1 つ上の階層）の不透明度。主役はあくまでフォーカス層 */
-export const CONTEXT_OPACITY = 0.4
+/** コンテキスト層（1 つ上の階層）の不透明度。主役はあくまでフォーカス層。
+ * ライトは地との差が小さいので、テーマごとの値を CSS 変数に持つ */
+export const CONTEXT_OPACITY = 'var(--fv-context-opacity)'
 /** コンテキスト層のノードサイズ。フォーカス層より一回り小さくする */
 export const CONTEXT_SIZE = { width: 176, height: 58 }
 /** コンテキスト層の色。彩度を落として背景に沈ませる */
-export const CONTEXT_COLOR = { fill: '#191c26', stroke: '#39415a', text: '#8792ab' }
+export const CONTEXT_COLOR = {
+  fill: 'var(--fv-context-fill)',
+  stroke: 'var(--fv-context-stroke)',
+  text: 'var(--fv-context-text)',
+}
 /** フォーカス層とコンテキスト層をまたぐエッジ（crossing）の色 */
-export const CROSSING_COLOR = '#6f7ea6'
+export const CROSSING_COLOR = 'var(--fv-crossing)'
 
 // --- 左右 2 ペイン表示（split） -------------------------------------------
 
@@ -120,11 +164,18 @@ export const SPLIT = {
   /** 左ペイン（上位階層）が占める幅の比率 */
   upperRatio: 0.36,
   /** ペイン間の区切り線の色 */
-  divider: '#2c3242',
+  divider: 'var(--fv-split-divider)',
   /** 左ペインで「今いる場所」を示す枠線色 */
-  currentStroke: '#6b8afd',
+  currentStroke: 'var(--fv-split-current)',
   /** 左ペインで「右ペインと繋がっている」ことを示す枠線色 */
-  linkedStroke: '#c9a94e',
+  linkedStroke: 'var(--fv-split-linked)',
+  /** linkedStroke の枠を持つノードのラベル色 */
+  linkedText: 'var(--fv-split-linked-text)',
+  /** ペイン見出し帯・省略帯・空表示の色 */
+  headerBg: 'var(--fv-split-header-bg)',
+  headerText: 'var(--fv-split-header-text)',
+  omitBg: 'var(--fv-split-omit-bg)',
+  emptyText: 'var(--fv-split-empty-text)',
   /** 左ペインのノードサイズ。右より一回り小さくする */
   nodeSize: { width: 152, height: 46 },
   /** 各ペインの見出し帯の高さ */

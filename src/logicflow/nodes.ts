@@ -12,6 +12,7 @@ import type { FlowLink, LinkKind } from '../flow/schema'
 import {
   BADGE_COLOR,
   BADGE_SIZE,
+  CANVAS_COLOR,
   CONTEXT_COLOR,
   COLLAPSED_SIZE,
   CROSSING_COLOR,
@@ -179,7 +180,7 @@ function drillBadge(left: number, bottom: number, count: number) {
         'text-anchor': 'middle',
         'font-size': NODE_FONT.small,
         'font-weight': 600,
-        fill: '#0e1424',
+        fill: BADGE_COLOR.countText,
       },
       countText,
     ),
@@ -382,7 +383,7 @@ export function toDrillGroupNode(
       style: {
         fill: color.fill,
         // 通常ノード（実線 1.5px）と明確に描き分ける: 太い破線 + アクセント色
-        stroke: '#6b8afd',
+        stroke: CANVAS_COLOR.accent,
         strokeWidth: 2.5,
         strokeDasharray: '7 4',
         radius: 10,
@@ -516,7 +517,7 @@ export function toSplitUpperNode(
         radius: 8,
       },
       textStyle: {
-        color: isCurrent ? base.text : isLinked ? '#efe0b0' : CONTEXT_COLOR.text,
+        color: isCurrent ? base.text : isLinked ? SPLIT.linkedText : CONTEXT_COLOR.text,
         fontSize: 11,
         overflowMode: 'autoWrap',
         textWidth: at.w - 14,
@@ -529,7 +530,7 @@ export function toSplitUpperNode(
  * 入れ子の段数ごとの背景色。深いほど明るくして「箱の中の箱」を見せる。
  * 枠線だけだと 3 段目の所属が読み取れなかった（実測）。
  */
-const NEST_FILL = ['#151924', '#1b2130', '#212940', '#27304b']
+const NEST_FILL = [0, 1, 2, 3].map((depth) => `var(--fv-nest-fill-${depth})`)
 
 /**
  * 経路上のグループ = dynamic-group の「常時展開」ノード。
@@ -571,8 +572,8 @@ export function toNestGroupNode(n: NestNode, at: Placed): LFNodeConfig {
       textStyle: {
         // DynamicGroupText は HTML 描画時に style.fill を色として使い、
         // SVG 描画時は color を使う。どちらに転んでも同じ色になるよう両方入れる
-        color: linked ? '#efe0b0' : KIND_COLOR.group.text,
-        fill: linked ? '#efe0b0' : KIND_COLOR.group.text,
+        color: linked ? SPLIT.linkedText : KIND_COLOR.group.text,
+        fill: linked ? SPLIT.linkedText : KIND_COLOR.group.text,
         fontSize: 11,
         overflowMode: 'ellipsis',
         textWidth: at.w - 16,

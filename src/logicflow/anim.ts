@@ -96,7 +96,7 @@ export function ensureAnimStyles() {
   fill: ${BADGE_COLOR.stroke};
 }
 .${HOST_CLASS} .${DRILL_CLASS}:hover .lfa-badge-label {
-  fill: #0e1424;
+  fill: ${BADGE_COLOR.countText};
 }
 /* バッジ（▸ 中を見る N）だけは単一クリックでも潜れる。押せることを明示する */
 .${HOST_CLASS} .lfa-badge { cursor: pointer; }
