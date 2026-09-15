@@ -4,7 +4,15 @@
  * 5 つの表示状態（nested / drilldown ×2 / split ×2）が共有する「箱の作り方」を集めた場所。
  */
 
-import LogicFlow, { DiamondNode, DiamondNodeModel, RectNode, RectNodeModel, h } from '@logicflow/core'
+import LogicFlow, {
+  DiamondNode,
+  DiamondNodeModel,
+  PolylineEdge,
+  PolylineEdgeModel,
+  RectNode,
+  RectNodeModel,
+  h,
+} from '@logicflow/core'
 
 import type { FlatNode } from '../flow/flatten'
 import type { AggregatedEdge, EdgeScope, NestNode, ViewEdge } from '../flow/collapse'
@@ -23,7 +31,8 @@ import {
   NODE_FONT,
   SPLIT,
 } from '../flow/theme'
-import type { Placed } from './layout'
+import type { EdgeRoute, Placed } from './layout'
+import { labelTextWidth } from './layout'
 
 /* ------------------------------------------------------------------ *
  * 2. LogicFlow データへの変換
@@ -47,6 +56,14 @@ export const NODE_TYPE = {
   /** 分岐（菱形） */
   diamond: 'lfa-diamond',
 } as const
+
+/**
+ * エッジ型。標準の 'polyline' を「線上ラベルの幅をエッジごとに変えられる」ように拡張したもの。
+ * BaseEdgeModel.getTextStyle() はテーマの edgeText（textWidth 90）しか返さず、
+ * LineText は背景矩形を文字数にかかわらず textWidth 幅で描く。短いラベルでも 90px の背景が
+ * 線を隠すので、properties.textStyle.textWidth を実幅（layout.ts の labelTextWidth）にする。
+ */
+export const EDGE_TYPE = { polyline: 'lfa-polyline' } as const
 
 /** 全カスタムノードに付く class。ホバーの transition をまとめて当てる */
 export const NODE_CLASS = 'lfa-node'
@@ -241,7 +258,14 @@ export class AppDiamondNode extends DiamondNode {
   }
 }
 
-/** LogicFlow インスタンス 1 つにカスタムノード型を登録する（split では 2 回呼ぶ） */
+export class AppPolylineEdgeModel extends PolylineEdgeModel {
+  getTextStyle() {
+    const p = (this.properties ?? {}) as { textStyle?: Record<string, unknown> }
+    return { ...super.getTextStyle(), ...(p.textStyle ?? {}) } as LogicFlow.EdgeTextTheme
+  }
+}
+
+/** LogicFlow インスタンス 1 つにカスタムノード型 / エッジ型を登録する（split では 2 回呼ぶ） */
 export function registerAppNodes(lf: LogicFlow) {
   lf.register({
     type: NODE_TYPE.rect,
@@ -252,6 +276,12 @@ export function registerAppNodes(lf: LogicFlow) {
     type: NODE_TYPE.diamond,
     view: AppDiamondNode as unknown as LogicFlow.RegisterConfig['view'],
     model: AppDiamondNodeModel as unknown as LogicFlow.RegisterConfig['model'],
+  })
+  lf.register({
+    type: EDGE_TYPE.polyline,
+    // view は標準の PolylineEdge のまま。変えるのはモデルの getTextStyle() だけ
+    view: PolylineEdge as unknown as LogicFlow.RegisterConfig['view'],
+    model: AppPolylineEdgeModel as unknown as LogicFlow.RegisterConfig['model'],
   })
 }
 
@@ -340,15 +370,48 @@ export function edgeStyleOf(kind: LinkKind) {
   }
 }
 
-export function toLfEdge(link: FlowLink, index: number): LFEdgeConfig {
+/**
+ * レイアウト（dagre）が決めた配線を LogicFlow のエッジ設定に写す。
+ *
+ * PolylineEdgeModel は pointsList を orthogonalizePath で直交化してそのまま採用し、
+ * startPoint / endPoint を渡せば setAnchors() が端点を上書きしない（BaseEdgeModel.js）。
+ * text に x / y を入れると formatText() がラベル位置として使う。
+ * route が無いエッジ（コンテキスト層をまたぐ線、nested の中身どうしの線）は
+ * 従来どおり LogicFlow の自動経路（最長セグメント中点にラベル）にフォールバックする。
+ */
+export function edgeRouteConfig(
+  route: EdgeRoute | undefined,
+  label: string,
+): Pick<LFEdgeConfig, 'type' | 'startPoint' | 'endPoint' | 'pointsList' | 'text'> {
+  if (route === undefined || route.points.length < 2) return { type: EDGE_TYPE.polyline, text: label }
+  const points = route.points.map((p) => ({ x: p.x, y: p.y }))
+  const text =
+    label !== '' && route.labelAt !== undefined
+      ? { value: label, x: route.labelAt.x, y: route.labelAt.y }
+      : label
+  return {
+    type: EDGE_TYPE.polyline,
+    startPoint: points[0],
+    endPoint: points[points.length - 1],
+    pointsList: points,
+    text,
+  }
+}
+
+/** 線上ラベルの textStyle。背景矩形をラベルの実幅に合わせる（レイアウトの予約幅と同じ値） */
+export function edgeTextProps(label: string): { textStyle?: { textWidth: number } } {
+  return label === '' ? {} : { textStyle: { textWidth: labelTextWidth(label) } }
+}
+
+export function toLfEdge(link: FlowLink, index: number, route?: EdgeRoute): LFEdgeConfig {
   const kind: LinkKind = link.kind ?? 'normal'
+  const label = link.label ?? ''
   return {
     id: `lk-${index}`,
-    type: 'polyline',
     sourceNodeId: link.from,
     targetNodeId: link.to,
-    text: link.label ?? '',
-    properties: { linkKind: kind, style: edgeStyleOf(kind) },
+    ...edgeRouteConfig(route, label),
+    properties: { linkKind: kind, style: edgeStyleOf(kind), ...edgeTextProps(label) },
   }
 }
 
@@ -450,14 +513,19 @@ export function viewEdgeStyle(kind: LinkKind, scope: EdgeScope) {
   }
 }
 
-export function toViewEdge(e: ViewEdge, index: number): LFEdgeConfig {
+export function toViewEdge(e: ViewEdge, index: number, route?: EdgeRoute): LFEdgeConfig {
+  const label = e.label ?? ''
   return {
     id: `vw-${index}`,
-    type: 'polyline',
     sourceNodeId: e.source,
     targetNodeId: e.target,
-    text: e.label ?? '',
-    properties: { linkKind: e.kind, edgeScope: e.scope, style: viewEdgeStyle(e.kind, e.scope) },
+    ...edgeRouteConfig(route, label),
+    properties: {
+      linkKind: e.kind,
+      edgeScope: e.scope,
+      style: viewEdgeStyle(e.kind, e.scope),
+      ...edgeTextProps(label),
+    },
   }
 }
 
@@ -467,14 +535,14 @@ export const SPLIT_EDGE_PREFIX = { upper: 'sp-u', lower: 'sp-l' } as const
 /** 左ペインのノードの状態。★ = 今いる場所 / ⚡ = 右ペインと繋がっている */
 export type UpperState = 'current' | 'linked' | 'plain'
 
-export function splitEdge(e: AggregatedEdge, id: string): LFEdgeConfig {
+export function splitEdge(e: AggregatedEdge, id: string, route?: EdgeRoute): LFEdgeConfig {
+  const label = e.label ?? ''
   return {
     id,
-    type: 'polyline',
     sourceNodeId: e.source,
     targetNodeId: e.target,
-    text: e.label ?? '',
-    properties: { linkKind: e.kind, style: edgeStyleOf(e.kind) },
+    ...edgeRouteConfig(route, label),
+    properties: { linkKind: e.kind, style: edgeStyleOf(e.kind), ...edgeTextProps(label) },
   }
 }
 

@@ -16,13 +16,10 @@ import {
   SELECT_COLOR,
   SPLIT,
 } from '../flow/theme'
-import type { Placed } from './layout'
+import type { Placed, Point } from './layout'
 import { CONTEXT_CLASS, DOC_CLASS, DRILL_CLASS, NODE_CLASS, SELECT_CLASS } from './nodes'
 
-/**
- * 視野合わせの余白。旧値 72 は 820x544 のキャンバスの 13% を捨てていた。
- * 折り返しレイアウト（LayoutCtx.fit）が縦横比を合わせてくれるので、ここは詰めてよい。
- */
+/** 視野合わせの余白。旧値 72 は 820x544 のキャンバスの 13% を捨てていた */
 export const FIT_PADDING = FIT.padding
 /** split の左ペインは幅が狭いので余白をさらに詰める */
 export const SPLIT_FIT_PADDING = 16
@@ -299,9 +296,57 @@ export function spawnGhost(
   disposers.push(() => ghost.remove())
 }
 
+/** 描画直後のエッジの折れ線とラベル位置。トゥイーン完了時にこれへ戻す */
+type EdgeRouteSnapshot = { id: string; pointsList: Point[]; text: Point | null }
+
+/** PolylineEdgeModel のうち、配線の復元に使うメンバだけ（.d.ts で確認済み） */
+type PolylineLike = {
+  pointsList: Point[]
+  text: { x: number; y: number; value: string }
+  updatePath: (pointList: Point[]) => void
+  moveText: (deltaX: number, deltaY: number) => void
+}
+
+/**
+ * レイアウト（dagre）が決めた配線を、描画直後のモデルから控えておく。
+ * moveNode2Coordinate() → moveStartPoint / moveEndPoint は updatePoints() で
+ * 自動経路に計算し直すので（PolylineEdgeModel.js）、トゥイーン中は pointsList が消える。
+ */
+function snapshotEdgeRoutes(lf: LogicFlow): EdgeRouteSnapshot[] {
+  const out: EdgeRouteSnapshot[] = []
+  for (const e of lf.graphModel.edges) {
+    const m = e as unknown as Partial<PolylineLike>
+    if (!Array.isArray(m.pointsList) || m.pointsList.length < 2) continue
+    out.push({
+      id: e.id,
+      pointsList: m.pointsList.map((p) => ({ x: p.x, y: p.y })),
+      text: m.text && m.text.value !== '' ? { x: m.text.x, y: m.text.y } : null,
+    })
+  }
+  return out
+}
+
+/**
+ * 控えておいた配線を再適用する。updatePath() は pointsList と points だけを差し替え、
+ * startPoint / endPoint は触らない（トゥイーンの往復で元の位置に戻っているので整合する）。
+ * 自動経路だったエッジは同じ折れ線が戻るだけなので、区別せず全部に掛けてよい。
+ */
+function restoreEdgeRoutes(lf: LogicFlow, routes: readonly EdgeRouteSnapshot[]) {
+  for (const r of routes) {
+    const m = lf.getEdgeModelById(r.id) as unknown as Partial<PolylineLike> | undefined
+    if (m === undefined || typeof m.updatePath !== 'function') continue
+    m.updatePath(r.pointsList.map((p) => ({ x: p.x, y: p.y })))
+    // ラベルは handleEdgeTextMove() が自動経路上の最寄り点へ動かしているので、元の位置へ戻す
+    if (r.text !== null && m.text !== undefined && typeof m.moveText === 'function') {
+      m.moveText(r.text.x - m.text.x, r.text.y - m.text.y)
+    }
+  }
+}
+
 /**
  * ノードの絶対座標を moveNode2Coordinate() で毎フレーム動かす位置トゥイーン。
  * エッジは MobX 経由で自動追従するので線も一緒に動く。
+ * ただし追従は自動経路なので、完了時にレイアウトが決めた配線（pointsList）を戻す。
  * 追加した rAF は呼び出し側の rafIds に積むので、cleanup で必ず止まる。
  */
 export function tweenLayout(
@@ -320,6 +365,8 @@ export function tweenLayout(
   }
   if (moving.length === 0) return
 
+  // apply(0) より前に控える。描画直後のモデルにはレイアウトの配線がそのまま入っている
+  const routes = snapshotEdgeRoutes(lf)
   const apply = (p: number) => {
     for (const m of moving) {
       lf.graphModel.moveNode2Coordinate(m.id, m.fx + (m.tx - m.fx) * p, m.fy + (m.ty - m.fy) * p, true)
@@ -331,7 +378,11 @@ export function tweenLayout(
     try {
       const t = Math.min(1, (performance.now() - t0) / ANIM.move)
       apply(easeProgress(t))
-      if (t < 1) rafIds.push(requestAnimationFrame(step))
+      if (t < 1) {
+        rafIds.push(requestAnimationFrame(step))
+        return
+      }
+      restoreEdgeRoutes(lf, routes)
     } catch (e: unknown) {
       onError(e instanceof Error ? `${e.name}: ${e.message}` : String(e))
     }

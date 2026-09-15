@@ -14,7 +14,7 @@ import type { FlowViewProps, ViewMode } from '../flow/view-props'
 import type { DrillTransition } from '../flow/collapse'
 import { drillTransition, levelView, nodesAtLevel, nodesUnder } from '../flow/collapse'
 import type { LinkKind } from '../flow/schema'
-import { ANIM, FIT } from '../flow/theme'
+import { ANIM } from '../flow/theme'
 import type { Viewport } from './anim'
 import {
   DRILL_ZOOM_FACTOR,
@@ -28,10 +28,10 @@ import {
   tweenLayout,
 } from './anim'
 import { docIdsOf } from './doc-index'
-import type { DrillGraph, FitBox } from './drilldown'
+import type { DrillGraph } from './drilldown'
 import { buildDrillGraph, buildFocusContextGraph } from './drilldown'
 import type { LayoutCtx, Placed } from './layout'
-import { arrange, emitPositions } from './layout'
+import { arrange, edgeKeysOf, emitArranged, routeOf } from './layout'
 import type { CollapseEventArgs, DynamicGroupModel, LayoutSnapshot } from './lf'
 import { createLogicFlow } from './lf'
 import type { LFNodeConfig } from './nodes'
@@ -187,17 +187,11 @@ export function useDrillEffect(params: DrillEffectParams) {
       // ホバー / 選択 / バッジ / 📄 を持つカスタムノード型（rect・diamond）を登録する
       registerAppNodes(lf)
 
-      /* --- レイアウトに「使ってよい面積」を先に教える --- *
-       * 旧実装は描画してから縮尺を決めていたので、横に長い鎖が
-       * 縦を 8 割空けたまま 0.55 倍に縮む、という結果になっていた。
-       * 先に余白ぶんを引いたキャンバス実寸を渡し、レイアウト側で
-       * 「何本ごとに折り返すか」を決めさせる。                        */
+      /* キャンバス実寸は視野合わせ（fitViewport）にだけ使う。
+       * レイアウト側の行折り返しは #13 で廃止した（dagre が主軸 1 本に並べ、
+       * 収まらないぶんはズーム / パンに任せる）。                        */
       const cw = host.clientWidth || 800
       const ch = host.clientHeight || 600
-      const fitBox: FitBox = {
-        width: Math.max(240, cw - FIT.padding),
-        height: Math.max(200, ch - FIT.padding),
-      }
       const docIds = docIdsOf(doc)
 
       // 画面に収めるべき描画結果のサイズ。両モードでここに書き込む
@@ -220,7 +214,7 @@ export function useDrillEffect(params: DrillEffectParams) {
             throw new Error(`ドリルダウン先 ${String(drillRoot)} に子ノードがありません`)
           }
           contextParentId = view.contextParent?.id ?? null
-          graph = buildFocusContextGraph(view, doc.links, flat, direction, fitBox, docIds)
+          graph = buildFocusContextGraph(view, doc.links, flat, direction, docIds)
           setContextInfo({
             count: view.context.length,
             crossing: graph.crossingCount,
@@ -231,7 +225,7 @@ export function useDrillEffect(params: DrillEffectParams) {
           if (levelNodes.length === 0) {
             throw new Error(`ドリルダウン先 ${String(drillRoot)} に子ノードがありません`)
           }
-          graph = buildDrillGraph(levelNodes, doc.links, flat, drillRoot, direction, fitBox, docIds)
+          graph = buildDrillGraph(levelNodes, doc.links, flat, drillRoot, direction, docIds)
           setContextInfo(null)
         }
         lf.render({ nodes: graph.nodes, edges: graph.edges })
@@ -261,17 +255,19 @@ export function useDrillEffect(params: DrillEffectParams) {
           throw new Error(`ドリルダウン先 ${String(drillRoot)} に子ノードがありません`)
         }
 
-        // --- レイアウト ---
-        // 入れ子の箱も 1 本の鎖になりやすいので、最上位だけ折り返しの対象にする
+        // --- レイアウト（各階層の中身を dagre で並べ、箱詰めで入れ子にする） ---
         const ctx: LayoutCtx = {
           byId: flat.byId,
           links: scopeLinks,
           collapsed,
           direction,
-          fit: fitBox,
         }
         const root = arrange(topIds, ctx)
-        emitPositions(root.boxes, 0, 0, positions)
+        const emitted = emitArranged(root, 0, 0)
+        positions = emitted.positions
+        // 配線が取れるのは「同じ箱の直下どうし」を結ぶリンクだけ。
+        // 箱をまたぐリンクは LogicFlow の自動経路にフォールバックする
+        const routeKeys = edgeKeysOf(scopeLinks)
 
         // --- 流し込み（flat.nodes は親が子より前に並んでいるのでそのまま使える） ---
         const nodes = scopeNodes
@@ -280,7 +276,7 @@ export function useDrillEffect(params: DrillEffectParams) {
             return at ? toLfNode(n, at, docIds.has(n.id)) : null
           })
           .filter((n): n is LFNodeConfig => n !== null)
-        const edges = scopeLinks.map(toLfEdge)
+        const edges = scopeLinks.map((l, i) => toLfEdge(l, i, routeOf(emitted, routeKeys[i])))
         lf.render({ nodes, edges })
 
         // --- 折りたたみ：ここが検証の本体。標準 API だけを呼ぶ ---

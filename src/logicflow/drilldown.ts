@@ -10,23 +10,19 @@ import type { AggregatedEdge, LevelView, ViewEdge } from '../flow/collapse'
 import { descendantCount, edgesAtLevel, edgesForLevelView, resolveEndpointAtLevel } from '../flow/collapse'
 import type { Direction, FlowLink, LinkKind } from '../flow/schema'
 import { CONTEXT_SIZE, LAYOUT_GAP, LINK_COLOR, NODE_FONT } from '../flow/theme'
-import type { LayoutCtx, Placed } from './layout'
-import { EMPTY_COLLAPSE, arrange, emitPositions } from './layout'
+import type { EdgeRoute, LayoutCtx, Placed } from './layout'
+import { EMPTY_COLLAPSE, arrange, edgeKeysOf, emitArranged, routeOf } from './layout'
 import type { LFEdgeConfig, LFNodeConfig } from './nodes'
 import {
   NODE_TYPE,
+  edgeRouteConfig,
   edgeStyleOf,
+  edgeTextProps,
   toContextNode,
   toDrillGroupNode,
   toLfNode,
   toViewEdge,
 } from './nodes'
-
-/**
- * 描き込めるキャンバスの実寸。レイアウトの折り返し（LayoutCtx.fit）に渡す。
- * 「横フローで縦が 8 割空く」問題はここが無いと直せない。
- */
-export type FitBox = { width: number; height: number }
 
 /** フォーカス層とコンテキスト層の間隔。層の切れ目をはっきり見せるため通常より広くとる */
 const CONTEXT_GAP = 96
@@ -134,14 +130,14 @@ function toBoundaryNode(b: Boundary, at: Placed): LFNodeConfig {
   }
 }
 
-function toLevelEdge(e: AggregatedEdge, index: number): LFEdgeConfig {
+function toLevelEdge(e: AggregatedEdge, index: number, route?: EdgeRoute): LFEdgeConfig {
+  const label = e.label ?? ''
   return {
     id: `lv-${index}`,
-    type: 'polyline',
     sourceNodeId: e.source,
     targetNodeId: e.target,
-    text: e.label ?? '',
-    properties: { linkKind: e.kind, style: edgeStyleOf(e.kind) },
+    ...edgeRouteConfig(route, label),
+    properties: { linkKind: e.kind, style: edgeStyleOf(e.kind), ...edgeTextProps(label) },
   }
 }
 
@@ -168,15 +164,15 @@ export function buildDrillGraph(
   flat: { byId: Map<string, FlatNode>; parentOf: Map<string, string> },
   drillRoot: string | null,
   direction: Direction,
-  fit: FitBox,
   docIds: ReadonlySet<string>,
 ): DrillGraph {
   const { edges: levelEdges, outOfScope } = edgesAtLevel(links, flat.parentOf, drillRoot)
   const boundaries = buildBoundaries(outOfScope, flat.parentOf, flat.byId, drillRoot)
 
   // --- レイアウト: この階層のノード + 境界マーカーを 1 枚の DAG として並べる ---
+  // label も渡す。dagre がラベルぶんの場所を空けるので、隣接ノード間のラベルが枠に重ならない
   const layoutLinks: FlowLink[] = [
-    ...levelEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind })),
+    ...levelEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind, label: e.label })),
     ...boundaries.map((b) =>
       b.dir === 'out'
         ? { from: b.anchor, to: b.id, kind: b.kind }
@@ -190,12 +186,12 @@ export function buildDrillGraph(
     collapsed: EMPTY_COLLAPSE,
     direction,
     levelOnly: true,
-    // 「1 本の長い鎖」をキャンバスの縦横比に合わせて折り返す
-    fit,
   }
   const root = arrange(ids, ctx)
-  const positions = new Map<string, Placed>()
-  emitPositions(root.boxes, 0, 0, positions)
+  const emitted = emitArranged(root, 0, 0)
+  const positions = emitted.positions
+  // 配線の key は layoutLinks の並び（階層内エッジ → 境界エッジ）と 1:1
+  const routeKeys = edgeKeysOf(layoutLinks)
 
   const nodes: LFNodeConfig[] = []
   for (const n of levelNodes) {
@@ -213,15 +209,16 @@ export function buildDrillGraph(
     if (at) nodes.push(toBoundaryNode(b, at))
   }
 
-  const edges: LFEdgeConfig[] = levelEdges.map(toLevelEdge)
+  const edges: LFEdgeConfig[] = levelEdges.map((e, i) =>
+    toLevelEdge(e, i, routeOf(emitted, routeKeys[i])),
+  )
   boundaries.forEach((b, i) => {
     const [from, to] = b.dir === 'out' ? [b.anchor, b.id] : [b.id, b.anchor]
     edges.push({
       id: `bd-${i}`,
-      type: 'polyline',
       sourceNodeId: from,
       targetNodeId: to,
-      text: '',
+      ...edgeRouteConfig(routeOf(emitted, routeKeys[levelEdges.length + i]), ''),
       properties: { linkKind: b.kind, style: edgeStyleOf(b.kind) },
     })
   })
@@ -288,7 +285,6 @@ export function buildFocusContextGraph(
   links: readonly FlowLink[],
   flat: { nodes: readonly FlatNode[]; byId: Map<string, FlatNode>; parentOf: Map<string, string> },
   direction: Direction,
-  fit: FitBox,
   docIds: ReadonlySet<string>,
 ): DrillGraph {
   const root = view.root
@@ -299,8 +295,6 @@ export function buildFocusContextGraph(
   const { edges: viewEdges, outOfScope } = edgesForLevelView(links, flat.parentOf, view)
 
   // --- コンテキスト層: 流れの前後 2 列に振り分ける ---
-  // フォーカス層より先に決める。コンテキスト帯が主軸を食う分だけ
-  // フォーカス層に渡す fit を減らさないと、折り返しの判断がずれるため。
   const orderIndex = new Map(flat.nodes.map((n, i) => [n.id, i] as const))
   const before: FlatNode[] = []
   const after: FlatNode[] = []
@@ -313,23 +307,25 @@ export function buildFocusContextGraph(
   const ctxMain = horiz ? CONTEXT_SIZE.width : CONTEXT_SIZE.height
   const ctxCross = horiz ? CONTEXT_SIZE.height : CONTEXT_SIZE.width
   const columnCross = (n: number) => (n === 0 ? 0 : n * ctxCross + LAYOUT_GAP.node * (n - 1))
-  const bandsMain =
-    (before.length > 0 ? ctxMain + CONTEXT_GAP : 0) + (after.length > 0 ? ctxMain + CONTEXT_GAP : 0)
 
   // --- フォーカス層: 従来どおり 1 枚の DAG として並べる ---
-  const focusLinks: FlowLink[] = viewEdges
-    .filter((e) => e.scope === 'focus')
-    .map((e) => ({ from: e.source, to: e.target, kind: e.kind }))
-  const focusFit: FitBox = horiz
-    ? { width: Math.max(240, fit.width - bandsMain), height: fit.height }
-    : { width: fit.width, height: Math.max(240, fit.height - bandsMain) }
+  // 配線を使うのはフォーカス層内のエッジだけ。crossing エッジはコンテキスト列へ
+  // 手置きしたノードに着地するので、従来どおり LogicFlow の自動経路に任せる
+  const focusEdges = viewEdges.filter((e) => e.scope === 'focus')
+  const focusLinks: FlowLink[] = focusEdges.map((e) => ({
+    from: e.source,
+    to: e.target,
+    kind: e.kind,
+    label: e.label,
+  }))
+  const focusKeys = edgeKeysOf(focusLinks)
+  const focusKeyOf = new Map(focusEdges.map((e, i) => [e, focusKeys[i]] as const))
   const ctx: LayoutCtx = {
     byId: flat.byId,
     links: focusLinks,
     collapsed: EMPTY_COLLAPSE,
     direction,
     levelOnly: true,
-    fit: focusFit,
   }
   const focusArr = arrange(
     view.focus.map((n) => n.id),
@@ -343,14 +339,13 @@ export function buildFocusContextGraph(
   const afterBand = after.length > 0 ? ctxMain + CONTEXT_GAP : 0
   const totalMain = beforeBand + focusMain + afterBand
 
-  const positions = new Map<string, Placed>()
   const focusCrossStart = (totalCross - focusCross) / 2
-  emitPositions(
-    focusArr.boxes,
+  const emitted = emitArranged(
+    focusArr,
     horiz ? beforeBand : focusCrossStart,
     horiz ? focusCrossStart : beforeBand,
-    positions,
   )
+  const positions: Map<string, Placed> = emitted.positions
 
   const placeColumn = (col: readonly FlatNode[], mainStart: number) => {
     let cross = (totalCross - columnCross(col.length)) / 2
@@ -391,7 +386,10 @@ export function buildFocusContextGraph(
 
   return {
     nodes,
-    edges: viewEdges.map(toViewEdge),
+    edges: viewEdges.map((e, i) => {
+      const key = focusKeyOf.get(e)
+      return toViewEdge(e, i, key === undefined ? undefined : routeOf(emitted, key))
+    }),
     width: horiz ? totalMain : totalCross,
     height: horiz ? totalCross : totalMain,
     outOfScopeCount: outOfScope.length,

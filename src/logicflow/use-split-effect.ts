@@ -185,9 +185,7 @@ export function useSplitEffect(params: SplitEffectParams) {
        * 幅は host.clientWidth ではなくラッパから計算する。
        * 1 ペイン ⇄ 2 ペインの切り替えでは左ペインの幅を CSS アニメーションで開くため、
        * effect が走る瞬間の clientWidth は「アニメーション途中の幅」になってしまう。
-       * 最終形の幅で視野を決めておけば、アニメーションが終わった時点でぴったり収まる。
-       * 右ペインはこの幅を「折り返しの判断材料」としてレイアウトにも渡すので、
-       * グラフを組み立てる前に確定させておく必要がある。 */
+       * 最終形の幅で視野を決めておけば、アニメーションが終わった時点でぴったり収まる。 */
       const wrapW = wrap.clientWidth || 800
       // 入れ子は横に広がるので、経路の深さに応じて左ペインを広げる（JSX 側と同じ式）
       const paneRatio =
@@ -196,11 +194,6 @@ export function useSplitEffect(params: SplitEffectParams) {
           : SPLIT.upperRatio
       const upperPaneW = Math.max(1, Math.round(wrapW * paneRatio))
       const lowerPaneW = Math.max(1, isTop ? wrapW : wrapW - upperPaneW)
-      // 右ペインの折り返し用。高さはペインの開閉で変わらないので実測でよい
-      const lowerFit = {
-        width: Math.max(240, lowerPaneW - FIT_PADDING),
-        height: Math.max(200, (lowerHost.clientHeight || 500) - FIT_PADDING),
-      }
 
       /* --- ゴースト（最上位は 1 セット + 「消えた左ペイン」ぶん） --- *
        * 最上位へ戻ったときは左ペインの DOM ごと無くなるので、
@@ -229,7 +222,7 @@ export function useSplitEffect(params: SplitEffectParams) {
       const docIds = docIdsOf(doc)
       const upperGraph =
         upperLf === null ? null : (nestGraph ?? buildSplitUpperGraph(view, flat.byId, docIds))
-      const lowerGraph = buildSplitLowerGraph(view, flat.byId, direction, lowerFit, docIds)
+      const lowerGraph = buildSplitLowerGraph(view, flat.byId, direction, docIds)
       // エッジ id はペインごとに接頭辞を付けてある（SVG マーカー id の衝突対策）
       if (upperLf !== null && upperGraph !== null) {
         upperLf.render({ nodes: upperGraph.nodes, edges: upperGraph.edges })

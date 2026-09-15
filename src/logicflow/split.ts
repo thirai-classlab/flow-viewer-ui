@@ -11,7 +11,7 @@ import { descendantCount, edgesForNestView } from '../flow/collapse'
 import type { Direction, FlowLink } from '../flow/schema'
 import { SPLIT } from '../flow/theme'
 import type { LayoutCtx, Placed } from './layout'
-import { EMPTY_COLLAPSE, arrange, emitPositions } from './layout'
+import { EMPTY_COLLAPSE, arrange, edgeKeysOf, emitArranged, routeOf } from './layout'
 import type { LFEdgeConfig, LFNodeConfig, UpperState } from './nodes'
 import {
   SPLIT_EDGE_PREFIX,
@@ -72,9 +72,10 @@ export function buildSplitUpperGraph(
   docIds: ReadonlySet<string> = new Set<string>(),
 ): SplitPaneGraph {
   if (view.upper.length === 0) return EMPTY_PANE
+  const links = view.upperEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind, label: e.label }))
   const ctx: LayoutCtx = {
     byId,
-    links: view.upperEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind })),
+    links,
     collapsed: EMPTY_COLLAPSE,
     direction: 'DOWN',
     levelOnly: true,
@@ -84,8 +85,9 @@ export function buildSplitUpperGraph(
     view.upper.map((n) => n.id),
     ctx,
   )
-  const positions = new Map<string, Placed>()
-  emitPositions(arranged.boxes, 0, 0, positions)
+  const emitted = emitArranged(arranged, 0, 0)
+  const positions: Map<string, Placed> = emitted.positions
+  const routeKeys = edgeKeysOf(links)
 
   const currentId = view.current?.id ?? null
   const nodes: LFNodeConfig[] = []
@@ -98,7 +100,9 @@ export function buildSplitUpperGraph(
   }
   return {
     nodes,
-    edges: view.upperEdges.map((e, i) => splitEdge(e, `${SPLIT_EDGE_PREFIX.upper}-${i}`)),
+    edges: view.upperEdges.map((e, i) =>
+      splitEdge(e, `${SPLIT_EDGE_PREFIX.upper}-${i}`, routeOf(emitted, routeKeys[i])),
+    ),
     width: arranged.width,
     height: arranged.height,
     positions,
@@ -110,25 +114,24 @@ export function buildSplitLowerGraph(
   view: SplitView,
   byId: Map<string, FlatNode>,
   direction: Direction,
-  fit?: { width: number; height: number },
   docIds: ReadonlySet<string> = new Set<string>(),
 ): SplitPaneGraph {
   if (view.lower.length === 0) return EMPTY_PANE
+  const links = view.lowerEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind, label: e.label }))
   const ctx: LayoutCtx = {
     byId,
-    links: view.lowerEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind })),
+    links,
     collapsed: EMPTY_COLLAPSE,
     direction,
     levelOnly: true,
-    // 右ペインは本編と同じく「キャンバスの縦横比に合わせて折り返す」
-    fit,
   }
   const arranged = arrange(
     view.lower.map((n) => n.id),
     ctx,
   )
-  const positions = new Map<string, Placed>()
-  emitPositions(arranged.boxes, 0, 0, positions)
+  const emitted = emitArranged(arranged, 0, 0)
+  const positions: Map<string, Placed> = emitted.positions
+  const routeKeys = edgeKeysOf(links)
 
   const nodes: LFNodeConfig[] = []
   for (const n of view.lower) {
@@ -143,7 +146,9 @@ export function buildSplitLowerGraph(
   }
   return {
     nodes,
-    edges: view.lowerEdges.map((e, i) => splitEdge(e, `${SPLIT_EDGE_PREFIX.lower}-${i}`)),
+    edges: view.lowerEdges.map((e, i) =>
+      splitEdge(e, `${SPLIT_EDGE_PREFIX.lower}-${i}`, routeOf(emitted, routeKeys[i])),
+    ),
     width: arranged.width,
     height: arranged.height,
     positions,
@@ -214,9 +219,12 @@ export function buildSplitNestGraph(
   // 向きは左ペインの慣例どおり常に縦。横に流すと入れ子の幅が柱に収まらない。
   // 間隔は共通テーマの SPLIT.nestGap（node 14 / rank 22）。本編用の LAYOUT_GAP
   // （node 28 / rank 64）は幅 36〜52% の柱に入れ子を積むには広すぎて縮尺が潰れる。
+  // レイアウトへは「左ペインで見えているノードへ寄せた」nestEdges を渡す。
+  // 元の links を渡すと、箱の中身どうしの線が射影されて配線が取れない
+  const nestLinks = nestEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind, label: e.label }))
   const ctx: LayoutCtx = {
     byId,
-    links,
+    links: nestLinks,
     collapsed: EMPTY_COLLAPSE,
     direction: 'DOWN',
     nestExpanded: expanded,
@@ -226,8 +234,9 @@ export function buildSplitNestGraph(
     view.tree.map((n) => n.node.id),
     ctx,
   )
-  const positions = new Map<string, Placed>()
-  emitPositions(arranged.boxes, 0, 0, positions)
+  const emitted = emitArranged(arranged, 0, 0)
+  const positions: Map<string, Placed> = emitted.positions
+  const routeKeys = edgeKeysOf(nestLinks)
 
   const nodes: LFNodeConfig[] = []
   const emit = (list: readonly NestNode[]) => {
@@ -249,7 +258,9 @@ export function buildSplitNestGraph(
 
   return {
     nodes,
-    edges: nestEdges.map((e, i) => splitEdge(e, `${SPLIT_EDGE_PREFIX.upper}-${i}`)),
+    edges: nestEdges.map((e, i) =>
+      splitEdge(e, `${SPLIT_EDGE_PREFIX.upper}-${i}`, routeOf(emitted, routeKeys[i])),
+    ),
     width: arranged.width,
     height: arranged.height,
     positions,

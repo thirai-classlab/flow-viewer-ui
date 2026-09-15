@@ -26,7 +26,7 @@
 | グループ（入れ子） | 公式プラグイン（`plugin`） |
 | 折りたたみ | 公式プラグイン（`plugin`） |
 | ドリルダウン | 自前実装（`diy`） |
-| 自動レイアウト | 自前実装（`diy`） |
+| 自動レイアウト | `@dagrejs/dagre` 3.1.1（ランク付け・交差最小化・座標・配線）+ 自前の箱詰め（入れ子コンテナ）。#13 で自前実装から置換 |
 
 ## 実装して分かったこと（findings）
 
@@ -50,7 +50,10 @@ toggleCollapse(true) / collapsedWidth / collapsedHeight / createVirtualEdge は�
 
 ### レイアウトはゼロ支援
 
-@logicflow/layout は存在しない（npm にも node_modules にも無い）。@logicflow/extension の AutoLayout はソース冒頭に「未完善」と書かれ flowPath 依存・型は any だらけで実用外。結果、DAG のランク付け（後退辺の DFS 除去 + 最長路）と入れ子コンテナの再帰的な箱詰めを全部自前で書くことになり、約 150 行がレイアウトだけで消えた。アダプタのコード量の大半はここ。
+> **訂正（2026-09-15, #13）**: `@logicflow/layout` は npm に存在する（2.1.5）。ただし描画後に renderRawData で描き直す方式で dynamic-group と衝突し、旧 dagre 0.8 依存なので採らなかった（`docs/draft/auto-layout.md` 案 D）。
+> 自前のランク付け（最長路）・文書順の並び・行折り返しは #13 で `@dagrejs/dagre` 3.1.1 に置き換えた。残っている自前部分は入れ子コンテナの箱詰め（`measure()`）と、dagre の折れ線を LogicFlow の polyline 用に直交化する `orthogonalRoute()`、ラベル寸法の確保だけ。
+
+@logicflow/extension の AutoLayout はソース冒頭に「未完善」と書かれ flowPath 依存・型は any だらけで実用外。POC 時点では DAG のランク付け（後退辺の DFS 除去 + 最長路）と入れ子コンテナの再帰的な箱詰めを全部自前で書くことになり、約 150 行がレイアウトだけで消えた。アダプタのコード量の大半はここだった。
 
 ### ドリルダウンは API なし
 
@@ -142,6 +145,8 @@ DynamicGroupText.renderTitleHtmlText は getTitleForeignObjectRect() で foreign
 
 ### 5 階層の実測: 潰れなかった。ただし共通の LAYOUT_GAP のままだと縮尺 0.53 で読めない
 
+> **再計測（2026-09-15, #13, dagre 化後）**: 同じ地点（deepFlow: 受注プロセス > 受付部門 > 申込受付 > フォーム処理、左ペイン幅 51%）で 1920x1080 = 1.00 / 1440x900 = 1.00 / 1280x800 = 0.98 / 1280x720 = 0.87。下の 0.78〜1.00 の帯を保っている（`SPLIT.nestGap` は dagre の nodesep / ranksep にそのまま渡している）。
+
 deepFlow の最深ドリル先（受注プロセス > 受付部門 > 申込受付 > フォーム処理、経路 4 段・展開 3 段・箱の深さ 4）で計測。左ペイン幅は式どおり min(0.52, 0.36 + 3×0.05) = 51%、左ペインの中身は 13 ノード / 14 エッジ。縮尺は 1920×1080 と 1440×900 と 1280×800 で 1.00、1280×720 でも 0.78（11px フォントが実効 8.6px）で全ラベルが読める。ただしこれは左ペイン専用のノード間隔 SPLIT.nestGap = { node: 14, rank: 22 } を入れた結果で、共通テーマの LAYOUT_GAP（node 28 / rank 64）のままだと同じ地点で縮尺 0.53 まで落ち（実効 5.8px）ラベルが完全に潰れた。LAYOUT_GAP は「本編のキャンバス」向けの値で、幅 51% の柱に入れ子を積む用途には広すぎる。左ペインの向きを direction 無視の DOWN 固定にする既存判断はそのまま踏襲した（横に流すと入れ子の幅が柱に収まらない）。圏外リンクは実機でも全階層 0 本。ページ内で collapse.ts を直接叩いて全ドリルルートを総当たりした結果でも、deepFlow 31 件 + sampleFlow 9 件の計 40 件すべてで edgesForNestView().outOfScope = 0（同じ地点の edgesAtLevel().outOfScope は 2〜8 本）。経路入れ子は「画面の外へ出る線」問題を完全に消す。
 
 ### MAX_NEST_LEVELS = 3 はこのデータでは一度も発火しない — 減らす必要はなく、むしろ上げてよい
@@ -151,6 +156,11 @@ deepFlow で潜れる最深コンテナは depth 3（工程 = step-form 等）�
 ## UX 作り直し（閲覧モードでフローを主役にする）で分かったこと
 
 ### 「縦の 8 割が空白」の犯人はズーム上限ではなくレイアウトの縦横比だった
+
+> **失効（2026-09-15, #13）**: この節の「ランクの列を折り返す」方式と面積比 52.2% の実測は、折り返しの廃止（dagre 化）で根拠を失った。
+> 折り返しは 848 通り中 84.4% で発生し、DAG 上は前進なのに画面上で後退する辺を 1,310 本作っていた（`docs/draft/auto-layout.md` §1）。
+> いまはフローを常に主軸 1 本に並べ、収まらないぶんはズーム / パンに任せる。`tests/layout.sweep.test.ts` の実測（1280x593）: 面積比 平均 15.3% / 中央値 13.9%、縮尺 中央値 0.75、後退辺 0 本。
+> 下の (1)(2) の判断（拡大上限の開放・余白 56）は今も有効。
 
 1280x633 の実測で、キャンバス 820x544 に対しフローは 748x77（面積比 12.9%・横は 91% 使っているのに縦は 14%）。
 原因は 3 つあって、効き方の大きさが全然違った。(1) `fitViewport` が `Math.min(1, …)` で拡大側を 1.0 に頭打ちしていた、
@@ -175,6 +185,15 @@ direction=RIGHT のまま並べると横 1360 × 縦 140 のような極端な�
 
 実機の既定表示（drilldown / トップ階層）は 12.9% → 85.4%、縮尺 0.55 → 1.41、
 ノードの実寸 110x35px → 379x178px、ラベルの実効フォント 6.6px → 18px。
+
+### dagre 化で分かったこと（#13）
+
+- dagre は `minlen` を内部で 2 倍にしてラベル用の仮想ノードを必ず 1 つ挟むので、隣接ノード間でも `edge.x / y`（ラベル中心）が取れる。ラベルに `width / height` を渡すと逆走辺（loopback）と順路が別トラックに分かれ、隣の枠にラベルが重ならない
+- dagre の `points` は両端が枠との交点で中間が仮想ノードを結ぶ斜線。そのまま `pointsList` に渡すと LogicFlow の `orthogonalizePath` が枠の縁を這う線を作るので、`layout.ts` の `orthogonalRoute()` が「側面の通過点に一番近い位置から出て、空き区間の中央で 1 回だけ曲がる」直交折れ線に組み直している。菱形（decision）は頂点だけが枠線に触れるので側面中央に固定
+- `LineText` は線上ラベルの背景を文字数にかかわらず `edgeText.textWidth`（90px）幅で描く。短いラベルでも 90px の背景が線を隠すので、`lfa-polyline`（`AppPolylineEdgeModel`）を登録して `properties.textStyle.textWidth` をラベルの実幅にしている。`BaseEdgeModel.getTextStyle()` はテーマしか見ないので override が要る
+- `moveNode2Coordinate()` → `moveStartPoint / moveEndPoint` は `updatePoints()` で自動経路に計算し直すため、位置トゥイーン中は `pointsList` が消える。`tweenLayout()` が描画直後の `pointsList` と `text` 位置を控え、完了時に `updatePath()` と `moveText()` で戻す
+- 配線が取れるのは「同じ箱の直下どうし」を結ぶ線だけ。箱をまたぐ線（nested の中身どうし、split 左ペインの入れ子に刺さる線、コンテキスト層への crossing）は従来どおり LogicFlow の自動経路（障害物回避なし・最長セグメント中点にラベル）に落ちる
+- 848 通り（32 ケース × 全ドリル経路 × RIGHT/DOWN）の回帰は `npm test`（`tests/layout.sweep.test.ts`）で走る: 例外 0 / NaN 0 / 重なり 0 / 後退辺 0 / 直交・両端が枠線上・ラベルが線上
 
 ### 拡大上限は「ラベルの実効フォントサイズ」で決めると迷わない
 
