@@ -68,7 +68,7 @@ export type FlowDoc = {
   links: FlowLink[]
 }
 
-/** レイアウト方向。ELK / dagre / G6 などに共通で渡す */
+/** レイアウト方向。ELK の elk.direction にそのまま渡す */
 export type Direction = 'RIGHT' | 'DOWN'
 
 /** 折りたたまれているグループ id の集合 */

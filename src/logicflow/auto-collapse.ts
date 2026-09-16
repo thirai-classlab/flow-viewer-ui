@@ -21,14 +21,14 @@ import { arrange } from './layout'
  * どの d でも届かなければ最も浅い d（= スコープ内の全コンテナ）を返す。
  * ctx.collapsed は空である前提（呼び出し側が collapsed.size === 0 のときだけ呼ぶ）。
  */
-export function pickAutoCollapse(
+export async function pickAutoCollapse(
   topIds: readonly string[],
   containers: readonly FlatNode[],
   ctx: LayoutCtx,
   full: { width: number; height: number },
   cw: number,
   ch: number,
-): string[] | null {
+): Promise<string[] | null> {
   if (containers.length === 0) return null
   if (fitScale(full.width, full.height, cw, ch) >= FIT.minReadable) return null
 
@@ -40,7 +40,7 @@ export function pickAutoCollapse(
   let ids: string[] = []
   for (let d = deepest; d >= shallowest; d -= 1) {
     ids = containers.filter((c) => c.depth >= d).map((c) => c.id)
-    const arr = arrange(topIds, { ...ctx, collapsed: new Set(ids) })
+    const arr = await arrange(topIds, { ...ctx, collapsed: new Set(ids) })
     if (fitScale(arr.width, arr.height, cw, ch) >= FIT.minReadable) return ids
   }
   return ids

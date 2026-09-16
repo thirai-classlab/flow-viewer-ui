@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="648" height="718" viewBox="0 0 648 718" font-family="Hiragino Sans, Noto Sans JP, sans-serif">
+<rect width="648" height="718" fill="#fbfbfa"/>
+<text x="40" y="26" font-size="16" fill="#222">split-nest-deep[ports+separate] / elk — ports + MODEL_ORDER + hierarchyHandling SEPARATE_CHILDREN</text>
+<defs>
+<marker id="ah-normal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3b6ea8"/></marker>
+<marker id="ah-exception" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c2543b"/></marker>
+<marker id="ah-loopback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9a6fb0"/></marker>
+</defs>
+<rect x="40" y="348" width="568" height="330" rx="8" fill="#eef1f5" stroke="#9aa7b5" stroke-width="1.2"/>
+<text x="48" y="363" font-size="11" fill="#556">受注プロセス</text>
+<rect x="224" y="370" width="372" height="296" rx="8" fill="#eef1f5" stroke="#9aa7b5" stroke-width="1.2"/>
+<text x="232" y="385" font-size="11" fill="#556">受付部門</text>
+<rect x="408" y="392" width="176" height="262" rx="8" fill="#eef1f5" stroke="#9aa7b5" stroke-width="1.2"/>
+<text x="416" y="407" font-size="11" fill="#556">申込受付</text>
+<polyline points="460.0,138.0 460.0,200.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="460.0,248.0 460.0,280.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="460.0,248.0 460.0,264.0 552.0,264.0 552.0,224.0 552.0,114.0 552.0,74.0 460.0,74.0 460.0,90.0" fill="none" stroke="#9a6fb0" stroke-width="1.6" stroke-dasharray="3 3" marker-end="url(#ah-loopback)"/>
+<polyline points="496.0,462.0 496.0,484.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="496.0,532.0 496.0,594.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<rect x="40" y="75" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="116" y="102" font-size="12" fill="#222" text-anchor="middle">申込発生</text>
+<rect x="420" y="415" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="496" y="442" font-size="12" fill="#222" text-anchor="middle">フォーム処理</text>
+<rect x="420" y="485" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="496" y="512" font-size="12" fill="#222" text-anchor="middle">重複判定</text>
+<rect x="420" y="595" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="496" y="622" font-size="12" fill="#222" text-anchor="middle">顧客登録</text>
+<rect x="236" y="393" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="312" y="420" font-size="12" fill="#222" text-anchor="middle">内容確認</text>
+<rect x="52" y="371" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="128" y="398" font-size="12" fill="#222" text-anchor="middle">審査部門</text>
+<rect x="384" y="91" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="460" y="118" font-size="12" fill="#222" text-anchor="middle">手配プロセス</text>
+<rect x="384" y="201" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="460" y="228" font-size="12" fill="#222" text-anchor="middle">完了プロセス</text>
+<rect x="384" y="281" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="460" y="308" font-size="12" fill="#222" text-anchor="middle">完了</text>
+<rect x="212" y="75" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="288" y="102" font-size="12" fill="#222" text-anchor="middle">謝絶</text>
+<rect x="426" y="160" width="28" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="440" y="173" font-size="11" fill="#444" text-anchor="middle">OK</text>
+<rect x="479" y="160" width="67" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="512.5" y="173" font-size="11" fill="#444" text-anchor="middle">未開通あり</text>
+<rect x="456" y="554" width="34" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="473" y="567" font-size="11" fill="#444" text-anchor="middle">新規</text>
+</svg>

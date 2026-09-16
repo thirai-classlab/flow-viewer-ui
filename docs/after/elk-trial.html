@@ -1,0 +1,75 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ELK vs dagre — 配線の比較（#18 試作 2026-09-16）</title>
+<style>
+  :root { color-scheme: light; font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; }
+  body { margin: 0; background: #f3f4f8; color: #1b2130; }
+  header { position: sticky; top: 0; z-index: 2; background: #fff; border-bottom: 1px solid #d2d7e3; padding: 10px 16px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 15px; margin: 0; }
+  label { font-size: 13px; display: flex; gap: 6px; align-items: center; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 16px 40px; align-items: start; }
+  figure { margin: 0; background: #fff; border: 1px solid #d2d7e3; border-radius: 8px; overflow: auto; max-height: 88vh; }
+  figcaption { position: sticky; top: 0; background: #eef0f5; border-bottom: 1px solid #d2d7e3; padding: 6px 10px; font-size: 12px; font-weight: 600; }
+  img { display: block; width: 100%; }
+  .note { font-size: 12px; color: #5c6578; padding: 0 16px 8px; line-height: 1.7; }
+  .note b { color: #1b2130; }
+</style>
+<header>
+  <h1>ELK vs dagre — 配線の比較</h1>
+  <label>シーン
+    <select id="scene">
+      <option value="sample3-top-DOWN">sample3 トップ（縦）</option>
+      <option value="sample3-top-RIGHT">sample3 トップ（横）</option>
+      <option value="split-nest-deep">split 左ペイン（深い入れ子）</option>
+    </select>
+  </label>
+  <label>左
+    <select id="left"></select>
+  </label>
+  <label>右
+    <select id="right"></select>
+  </label>
+</header>
+<p class="note">
+  同じデータ・同じノード寸法・同じ間隔で両エンジンに描かせたもの（LogicFlow は通していない素の SVG）。
+  <b>elk_spread</b> が本命（辺ごとにポートを中央帯へ散らす）、<b>elk_single</b> は入口・出口を辺の中央 1 点に集める版、<b>elk_no-ports</b> はポート制約なし。
+  <b>dagre</b> が現行実装、<b>dagre-ports</b> は現行に自前ポート規則を足した試作。
+  既知の欠陥: elk_spread はひし形に入る線の 30.5% が図形の外で止まる（「審査結果」の両端の矢尻）。
+  <b>elk 最終</b>（#19）はこれを 0 にした版で、平坦な階層と入れ子（split 左ペイン）で設定を分けている。
+  入れ子だけ partitioning + loopback 反転 + ラベル無し + 詰めた spacing を足し、JSON の並び順どおりに上から下へ読める。
+</p>
+<main>
+  <figure><figcaption id="lcap"></figcaption><img id="limg"></figure>
+  <figure><figcaption id="rcap"></figcaption><img id="rimg"></figure>
+</main>
+<script>
+  const VARIANTS = [
+    ['_elk-final', 'elk 最終（ひし形は外周に着地）'],
+    ['_dagre', 'dagre（現行）'],
+    ['_dagre-ports', 'dagre + 自前ポート規則（試作）'],
+    ['spread_elk', 'elk spread（本命・ポートを散らす）'],
+    ['_elk', 'elk（既定のポート指定）'],
+    ['no-ports_elk', 'elk ポート制約なし'],
+    ['ports+greedy_elk', 'elk ポート + cycleBreaking greedy'],
+    ['ports+group_elk', 'elk ポート + グループ化'],
+    ['ports+separate_elk', 'elk ポート + separate'],
+  ]
+  const $ = (id) => document.getElementById(id)
+  for (const sel of [$('left'), $('right')]) {
+    sel.innerHTML = VARIANTS.map(([v, label]) => `<option value="${v}">${label}</option>`).join('')
+  }
+  $('left').value = '_dagre'
+  $('right').value = '_elk-final'
+  function render() {
+    const scene = $('scene').value
+    for (const [side, cap, img] of [['left', 'lcap', 'limg'], ['right', 'rcap', 'rimg']]) {
+      const v = $(side).value
+      const name = VARIANTS.find((x) => x[0] === v)[1]
+      $(cap).textContent = `${scene} — ${name}`
+      $(img).src = `elk-trial/${scene}${v}.svg`
+      $(img).alt = `${scene} ${name}`
+    }
+  }
+  for (const id of ['scene', 'left', 'right']) $(id).addEventListener('change', render)
+  render()
+</script>

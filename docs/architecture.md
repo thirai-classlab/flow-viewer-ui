@@ -68,6 +68,11 @@ import '@thirai-classlab/flow-viewer/style.css'
 | 1 パッケージ内で `src/lib` / `src/demo` を分ける | 境界がフォルダで見え、package.json は 1 つ | workspaces: 一人開発には重い。分けない: demo コードが publish に紛れる |
 | vitest は `src/lib/flow` だけ | 触らないと決めた層が UI 変更で壊れないことを自動で担保。UI テストは見た目を変える最中は壊れ続ける | ピクセル比較: UI を意図的に変えるので毎回 FAIL |
 | npm 手動 publish、0.x | 一人開発でホストが 1 つ。secrets を CI に置かずに済む | CI publish: `NPM_TOKEN` の管理が増える。ホストが増えたら移す |
+| 自動レイアウトは **elkjs 0.12（ELK layered）**（#19、2026-09-16。旧 `@dagrejs/dagre` 3.1.1 を削除） | 848 通りの実測で dagre → ELK: 上辺入口が中央 0.828 → 0.985 / 出口が必ず下辺・側面 0.951 → 1.000 / 線どうしの共線重なり 762 → 0 / ラベルが自分の線に重なる 1,046 → 0（ラベル総数 1,110）。入れ子（nested / split 左ペイン）も `elk.hierarchyHandling=INCLUDE_CHILDREN` で箱をまたぐ線が直交配線される（dagre は配線を返せず LogicFlow の自動経路に落ちていた: split 左ペイン 14 本中 5 本しか返らない） | dagre 継続: ポート制約が無く「上は中央 / 下から出る」を作れない。dagre compound（台帳 #16）: 箱をまたぐ線は解けるがポート問題が残るため #19 で不採用。`@logicflow/layout`: 描画後に renderRawData で描き直す方式で dynamic-group と衝突 |
+| ELK は **Worker + 遅延ロード**（`elkjs/lib/elk-api.js` + `new Worker(new URL('elkjs/lib/elk-worker.min.js', import.meta.url), { type: 'module' })`） | `elk.bundled.js` は 1.46MB（gzip 440KB）。本体チャンクに入れず、初回レイアウトまで読み込まない。実測の dist: `index-*.js` 1.32MB（gzip 386KB）に ELK は含まれず、`elk-api-*.js` 4.8KB + worker アセット 1.43MB が別チャンク | 本体に静的 import: 初期ロードが 1.4MB 増える。同期のまま使う: elkjs は Promise API しか無い |
+| ELK が使えない環境（Worker が無い / CSP で作れない）だけ `elk.bundled.js` に落とす | vitest は node 環境で `Worker` が未定義（実測 `typeof Worker === 'undefined'`）。テストと CSP 環境の両方をこの 1 本で賄う | worker のみ: `npm test` が動かない。bundled のみ: レイアウト中に UI スレッドが止まる |
+| 所要は dagre の **2.36 倍**（848 通りで 1,723ms → 4,069ms = 1 画面あたり 2.03ms → 4.80ms）を受け入れる | 1 画面 5ms は体感に出ない。Worker に逃がすので UI スレッドは止まらない | 速度優先で dagre 継続: 上の品質指標が戻る |
+| **ライセンス表記義務**: elkjs / ELK は **EPL-2.0 OR GPL-3.0-or-later**（`node_modules/elkjs/package.json` の `license`） | パッケージを配布するときは EPL-2.0 を選択したうえで、ライセンス全文と「改変の有無」を同梱する義務がある（EPL-2.0 §3）。LogicFlow は Apache-2.0、React は MIT なので、**この依存だけ条件が違う** | 表記しない: EPL-2.0 違反。dagre（MIT）に戻す: 上の品質指標が戻る |
 
 ## テーマ（2026-09-15 実装）
 
@@ -76,6 +81,19 @@ import '@thirai-classlab/flow-viewer/style.css'
 - 上位層の不透明度（`--fv-context-opacity`）もテーマごとの値。ライト 0.8 / ダーク 0.6（POC の 0.4 では上位層のラベルが 1.9:1 で読めず、配色監査を受けて 2026-09-15 に 0.6 + 文字 `#d7dbe3` = 5.2:1 に決めた）
 - **別名の落とし穴**: シェル用の `--bg: var(--fv-bg)` 等は `:root` だけで宣言すると、その時点の（ライトの）値で確定して継承され、`data-theme` の要素で `--fv-*` を上書きしても別名が変わらない。そのため `:root, [data-theme]` の両方で再宣言している。パッケージ化で別名を消せば不要になる
 - **HMR の落とし穴**: `anim.ts` は CSS を `<style>` に 1 度だけ注入する。`theme.ts` の値を変えても HMR では注入済み CSS が更新されないので、色・不透明度の確認は**ページを再読込**してから行う
+
+## レイアウト（2026-09-16、#19 で ELK 化）
+
+- 実体は `src/logicflow/layout.ts` の `arrange()`。**戻り値が `Promise<Arranged>` になった**ので、呼び出し側（`drilldown.ts` / `split.ts` / `auto-collapse.ts` と 2 本の描画 effect）はすべて `async`
+- `layout.ts` は手順の骨だけを持ち、中身は 5 つに分けてある（#19 の後始末で 995 行 → 6 ファイル・最大 398 行）。
+  `layout-model.ts`（公開型と座標の小道具）/ `layout-spec.ts`（箱の仕様とリンクの解決）/ `layout-elk.ts`（ELK インスタンスとオプションと入力）/
+  `layout-read.ts`（出力の読み取り）/ `layout-emit.ts`（LogicFlow の座標系へ）。呼び出し側の import 先は `./layout` のまま
+- 視野合わせ（`fitViewport`）の基準は **ノード実体だけの外接矩形**（`Arranged.nodeBox`）。配線とラベルを含む `width` / `height` で寄せると
+  「はみ出す軸を開始側へ寄せた結果、可視域にノードが 1 つも無い」画面ができる。収まらない軸では主軸の先頭ノード（`Arranged.headBox`）が
+  可視域に入るところまで最小限ずらす
+- 描画 effect は **(1) await を含む「組み立て」→ (2) await を 1 つも含まない「描画」** の 2 段構成。世代カウンタ（`genRef`）で (1) の途中に依存が変わった描画を捨てるので、`cleanup` が await をまたぐレース（ghost / viewport / tween の ref 書き込み順が入れ替わる、destroy 済みインスタンスへ描く）が構造的に起きない
+- split は左右 2 本を `Promise.all` で揃えてから描く（片側だけ先に出ない）
+- 効いた ELK オプションと、**ELK が不正なオプションを黙って無視する**性質は `src/logicflow/NOTES.md` の「ELK 化で分かったこと（#19）」に置く
 
 ## 触ると壊れるもの
 

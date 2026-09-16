@@ -4,11 +4,11 @@
  * nested / drilldown 用の effect（use-drill-effect.ts）とは完全に分離してある。
  */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type LogicFlow from '@logicflow/core'
 
 import type { FlowViewProps, ViewMode } from '../flow/view-props'
-import type { DrillTransition } from '../flow/collapse'
+import type { DrillTransition, PathNestView, SplitView } from '../flow/collapse'
 import { drillTransition, pathNestView, splitView } from '../flow/collapse'
 import { pathTo } from '../flow/flatten'
 import { ANIM, FIT, SPLIT } from '../flow/theme'
@@ -42,7 +42,7 @@ function isBadgeHit(e: MouseEvent | undefined): boolean {
   if (!(target instanceof Element)) return false
   return target.closest(`.${BADGE_CLASS}`) !== null
 }
-import type { SplitPaneGraph } from './split'
+import type { NestPaneGraph, SplitPaneGraph } from './split'
 import {
   EMPTY_PANE,
   buildSplitLowerGraph,
@@ -50,6 +50,18 @@ import {
   buildSplitUpperGraph,
   nestUpperRatio,
 } from './split'
+
+/**
+ * await を含む組み立ての結果。ここから先（描画）は同期で走らせる。
+ * 左右 2 本は Promise.all で揃うまで待つので、片側だけ先に描かれることがない。
+ */
+type SplitPlan = {
+  view: SplitView
+  nestView: PathNestView | null
+  nestGraph: NestPaneGraph | null
+  upperGraph: SplitPaneGraph | null
+  lowerGraph: SplitPaneGraph
+}
 
 export type SplitEffectParams = {
   doc: FlowViewProps['doc']
@@ -131,6 +143,12 @@ export function useSplitEffect(params: SplitEffectParams) {
    * 検証の本体。drilldown 用の effect とは完全に分離し、
    * 「2 セットぶんの cleanup を必ず書く」ことだけを守れば済む形にしてある。
    * ================================================================== */
+  /**
+   * 描画の世代。effect が走るたびに 1 つ進め、cleanup でも進める。
+   * await から戻った時点で自分の世代でなければ、DOM にも ref にも一切触らずに降りる。
+   */
+  const genRef = useRef(0)
+
   useEffect(() => {
     if (viewMode !== 'split') {
       // split を離れたら、持ち越したゴーストと座標は捨てる
@@ -153,15 +171,22 @@ export function useSplitEffect(params: SplitEffectParams) {
     // 中途半端に 1 インスタンスだけ作らないよう、何もせず次の描画に任せる。
     if (!isTop && upperHost === null) return
 
-    const rootChanged = lastSplitRootRef.current !== drillRoot
-    const transition: DrillTransition = rootChanged
-      ? drillTransition(prevDrillRoot, drillRoot, flat.parentOf)
-      : 'none'
-    lastSplitRootRef.current = drillRoot
+    /* --- ペインの幅を先に決める（組み立てと描画で同じ値を使う） --- *
+     * 幅は host.clientWidth ではなくラッパから計算する。
+     * 1 ペイン ⇄ 2 ペインの切り替えでは左ペインの幅を CSS アニメーションで開くため、
+     * effect が走る瞬間の clientWidth は「アニメーション途中の幅」になってしまう。
+     * 最終形の幅で視野を決めておけば、アニメーションが終わった時点でぴったり収まる。 */
+    const useNest = nestPath && !isTop
+    const wrapW = wrap.clientWidth || 800
+    // 入れ子は横に広がるので、経路の深さに応じて左ペインを広げる（JSX 側と同じ式）
+    const paneRatio =
+      useNest && drillRoot !== null
+        ? nestUpperRatio(pathTo(drillRoot, flat.parentOf).length)
+        : SPLIT.upperRatio
+    const upperPaneW = Math.max(1, Math.round(wrapW * paneRatio))
+    const lowerPaneW = Math.max(1, isTop ? wrapW : wrapW - upperPaneW)
 
-    const pendingGhosts = splitGhostRef.current
-    splitGhostRef.current = null
-
+    const gen = ++genRef.current
     const rafIds: number[] = []
     const timers: number[] = []
     const disposers: (() => void)[] = [
@@ -173,31 +198,57 @@ export function useSplitEffect(params: SplitEffectParams) {
     // 片方の生成に失敗しても、既に作った方を確実に destroy するための控え
     let upperLf: LogicFlow | null = null
     let lowerLf: LogicFlow | null = null
+    /** 描画まで到達したか。到達していないなら cleanup は ghost も host も触らない */
+    let rendered = false
 
-    try {
+    /* ============================================================ *
+     * (1) 組み立て — await を含む。DOM も ref も一切触らない。
+     *     左右 2 本は Promise.all で揃えてから描く（片側だけ先に出さない）。
+     * ============================================================ */
+    const build = async (): Promise<SplitPlan> => {
       const view = splitView(flat.nodes, flat.parentOf, flat.byId, doc.links, drillRoot)
       /* 経路入れ子モード。最上位には上位階層そのものが無いので下位のときだけ成立する。
          nestPath = false なら従来の splitView（1 つ上の階層だけ）のままにする。 */
-      const useNest = nestPath && !isTop
       const nestView = useNest
         ? pathNestView(flat.nodes, flat.parentOf, flat.byId, doc.links, drillRoot)
         : null
-      const nestGraph =
-        nestView === null ? null : buildSplitNestGraph(nestView, flat.byId, doc.links, flat.parentOf)
+      const docIds = docIdsOf(doc)
+      // 左ペインは「経路入れ子」か「1 つ上の階層」のどちらか。最上位はそもそも描かない
+      // 左ペインの視野を先に渡す。縮尺が頭打ちの地点だけ ELK にラベルの場所を空けさせる
+      const upperFit = {
+        cw: upperPaneW,
+        ch: upperHost?.clientHeight || 500,
+        pad: SPLIT_FIT_PADDING,
+        maxScale: FIT.maxScaleUpper,
+      }
+      const nestTask: Promise<NestPaneGraph | null> =
+        nestView === null
+          ? Promise.resolve(null)
+          : buildSplitNestGraph(nestView, flat.byId, doc.links, flat.parentOf, upperFit)
+      const plainTask: Promise<SplitPaneGraph | null> =
+        isTop || nestView !== null ? Promise.resolve(null) : buildSplitUpperGraph(view, flat.byId, docIds)
+      const [nestGraph, plainUpper, lowerGraph] = await Promise.all([
+        nestTask,
+        plainTask,
+        buildSplitLowerGraph(view, flat.byId, direction, docIds),
+      ])
+      return { view, nestView, nestGraph, upperGraph: nestGraph ?? plainUpper, lowerGraph }
+    }
 
-      /* --- ペインの幅を先に決める --- *
-       * 幅は host.clientWidth ではなくラッパから計算する。
-       * 1 ペイン ⇄ 2 ペインの切り替えでは左ペインの幅を CSS アニメーションで開くため、
-       * effect が走る瞬間の clientWidth は「アニメーション途中の幅」になってしまう。
-       * 最終形の幅で視野を決めておけば、アニメーションが終わった時点でぴったり収まる。 */
-      const wrapW = wrap.clientWidth || 800
-      // 入れ子は横に広がるので、経路の深さに応じて左ペインを広げる（JSX 側と同じ式）
-      const paneRatio =
-        useNest && drillRoot !== null
-          ? nestUpperRatio(pathTo(drillRoot, flat.parentOf).length)
-          : SPLIT.upperRatio
-      const upperPaneW = Math.max(1, Math.round(wrapW * paneRatio))
-      const lowerPaneW = Math.max(1, isTop ? wrapW : wrapW - upperPaneW)
+    /* ============================================================ *
+     * (2) 描画 — ここから最後まで await を 1 つも挟まない。
+     * ============================================================ */
+    const draw = (plan: SplitPlan) => {
+      const { view, nestView, nestGraph, upperGraph, lowerGraph } = plan
+
+      const rootChanged = lastSplitRootRef.current !== drillRoot
+      const transition: DrillTransition = rootChanged
+        ? drillTransition(prevDrillRoot, drillRoot, flat.parentOf)
+        : 'none'
+      lastSplitRootRef.current = drillRoot
+
+      const pendingGhosts = splitGhostRef.current
+      splitGhostRef.current = null
 
       /* --- ゴースト（最上位は 1 セット + 「消えた左ペイン」ぶん） --- *
        * 最上位へ戻ったときは左ペインの DOM ごと無くなるので、
@@ -217,21 +268,19 @@ export function useSplitEffect(params: SplitEffectParams) {
       /* --- インスタンス。最上位は 1 つ、下位は 2 つ。
              plugins はインスタンスオプションなので静的登録は使わない --- */
       if (upperHost !== null) upperLf = createLogicFlow(upperHost)
-      lowerLf = createLogicFlow(lowerHost)
+      const lower = createLogicFlow(lowerHost)
+      lowerLf = lower
+      rendered = true
       // ホバー / 選択 / バッジ / 手順書マークのカスタムノード型はインスタンス単位に登録する
       if (upperLf !== null) registerAppNodes(upperLf)
-      registerAppNodes(lowerLf)
-      splitLfRef.current = { upper: upperLf, lower: lowerLf }
+      registerAppNodes(lower)
+      splitLfRef.current = { upper: upperLf, lower }
 
-      const docIds = docIdsOf(doc)
-      const upperGraph =
-        upperLf === null ? null : (nestGraph ?? buildSplitUpperGraph(view, flat.byId, docIds))
-      const lowerGraph = buildSplitLowerGraph(view, flat.byId, direction, docIds)
       // エッジ id はペインごとに接頭辞を付けてある（SVG マーカー id の衝突対策）
       if (upperLf !== null && upperGraph !== null) {
         upperLf.render({ nodes: upperGraph.nodes, edges: upperGraph.edges })
       }
-      lowerLf.render({ nodes: lowerGraph.nodes, edges: lowerGraph.edges })
+      lower.render({ nodes: lowerGraph.nodes, edges: lowerGraph.edges })
 
       setSplitInfo({
         // 入れ子では「左ペインに出ている全ノード数」が上位階層の件数より意味がある
@@ -255,7 +304,13 @@ export function useSplitEffect(params: SplitEffectParams) {
         const cw = paneW
         // 高さはペインの開閉で変わらないので実測でよい
         const ch = host.clientHeight || 500
-        const finalVp = fitViewport(graph.width, graph.height, cw, ch, pad, maxScale, minScale)
+        const finalVp = fitViewport(graph.width, graph.height, cw, ch, {
+          pad,
+          maxScale,
+          minScale,
+          nodes: graph.nodeBox,
+          anchor: graph.headBox,
+        })
         let startVp: Viewport | null = null
         if (animate) {
           if (transition === 'enter') startVp = scaleAbout(finalVp, 1 / DRILL_ZOOM_FACTOR, cw, ch)
@@ -284,7 +339,7 @@ export function useSplitEffect(params: SplitEffectParams) {
           : null
       // 右ペイン（今いる階層の中身）は本編と同じく読める縮尺の下限付き
       const lowerVp = fitPane(
-        lowerLf,
+        lower,
         lowerHost,
         lowerPaneW,
         lowerGraph,
@@ -296,18 +351,15 @@ export function useSplitEffect(params: SplitEffectParams) {
       splitViewportRef.current = { upper: upperVp, lower: lowerVp }
 
       // 「全体を表示」: 右ペインだけ下限なしで収め直す（左ペインは元から下限なし）
-      const fitTarget = lowerLf
       fitAllRef.current = () => {
-        const vp = fitViewport(
-          lowerGraph.width,
-          lowerGraph.height,
-          lowerPaneW,
-          lowerHost.clientHeight || 500,
-          FIT_PADDING,
-          FIT.maxScalePane,
-          FIT.minScale,
-        )
-        transitionViewport(fitTarget, wrap, vp, animate, timers)
+        const vp = fitViewport(lowerGraph.width, lowerGraph.height, lowerPaneW, lowerHost.clientHeight || 500, {
+          pad: FIT_PADDING,
+          maxScale: FIT.maxScalePane,
+          minScale: FIT.minScale,
+          nodes: lowerGraph.nodeBox,
+          anchor: lowerGraph.headBox,
+        })
+        transitionViewport(lower, wrap, vp, animate, timers)
         splitViewportRef.current = { ...splitViewportRef.current, lower: vp }
       }
       disposers.push(() => {
@@ -356,7 +408,7 @@ export function useSplitEffect(params: SplitEffectParams) {
         if (upperLf !== null && upperGraph !== null) {
           tweenLayout(upperLf, prevLayout.upper, upperGraph.positions, rafIds, setError)
         }
-        tweenLayout(lowerLf, prevLayout.lower, lowerGraph.positions, rafIds, setError)
+        tweenLayout(lower, prevLayout.lower, lowerGraph.positions, rafIds, setError)
       }
 
       /* --- 操作 --- */
@@ -405,51 +457,39 @@ export function useSplitEffect(params: SplitEffectParams) {
       }
 
       const upperForEvents = upperLf
-      const lowerForEvents = lowerLf
       if (upperForEvents !== null) {
         upperForEvents.on('node:click', onUpperClick)
         upperForEvents.on('node:dbclick', onUpperClick)
       }
-      lowerForEvents.on('node:click', onLowerClick)
-      lowerForEvents.on('node:dbclick', onLowerDbl)
-      lowerForEvents.on('blank:click', onLowerBlankClick)
+      lower.on('node:click', onLowerClick)
+      lower.on('node:dbclick', onLowerDbl)
+      lower.on('blank:click', onLowerBlankClick)
       lowerHost.addEventListener('dblclick', onLowerBlankDbl)
       disposers.push(() => {
         if (upperForEvents !== null) {
           upperForEvents.off('node:click', onUpperClick)
           upperForEvents.off('node:dbclick', onUpperClick)
         }
-        lowerForEvents.off('node:click', onLowerClick)
-        lowerForEvents.off('node:dbclick', onLowerDbl)
-        lowerForEvents.off('blank:click', onLowerBlankClick)
+        lower.off('node:click', onLowerClick)
+        lower.off('node:dbclick', onLowerDbl)
+        lower.off('blank:click', onLowerBlankClick)
         lowerHost.removeEventListener('dblclick', onLowerBlankDbl)
       })
       // 描画し直した直後は選択枠が消えているので、両ペインへ貼り直す
       applySelection(upperHost, selectedId)
       applySelection(lowerHost, selectedId)
       setError(null)
+    }
 
-      /* --- cleanup（最上位なら 1 セット / 下位なら 2 セット。
-             StrictMode の二重実行でも、最上位 ⇄ 下位の往復でも取りこぼさない） --- *
-       * 最上位へ戻るときは React が左ペインの DOM を先に外すため、
-       * destroy 時点で upperHost は document から切り離されている。
-       * LogicFlow.destroy() は preact の render(null, container) と
-       * ResizeObserver.disconnect() しかしないので、切り離し後でも安全に走る。
-       * ただし destroy が中身を消すので、ゴースト用の innerHTML は必ず destroy の前に取る。 */
-      const deadUpper = upperLf
-      const deadLower = lowerLf
-      return () => {
-        for (const d of disposers) d()
-        splitGhostRef.current = animate
-          ? { upper: upperHost?.innerHTML ?? null, lower: lowerHost.innerHTML }
-          : null
-        deadUpper?.destroy()
-        deadLower.destroy()
-        splitLfRef.current = null
-        if (upperHost !== null) upperHost.innerHTML = ''
-        lowerHost.innerHTML = ''
-      }
-    } catch (e: unknown) {
+    const run = async () => {
+      const plan = await build()
+      // 依存が変わっていたら DOM も ref も触らずに降りる（cleanup が後始末済み）
+      if (gen !== genRef.current) return
+      draw(plan)
+    }
+
+    run().catch((e: unknown) => {
+      if (gen !== genRef.current) return
       setError(e instanceof Error ? `${e.name}: ${e.message}` : String(e))
       for (const d of disposers) d()
       for (const dead of [upperLf, lowerLf]) {
@@ -459,12 +499,38 @@ export function useSplitEffect(params: SplitEffectParams) {
           /* destroy 中の二次エラーは初期化エラーを覆い隠すだけなので無視する */
         }
       }
+      upperLf = null
+      lowerLf = null
+      rendered = false
       splitLfRef.current = null
       if (upperHost !== null) upperHost.innerHTML = ''
       lowerHost.innerHTML = ''
       splitGhostRef.current = null
       splitLayoutRef.current = null
-      return
+    })
+
+    /* --- cleanup（最上位なら 1 セット / 下位なら 2 セット。
+           StrictMode の二重実行でも、最上位 ⇄ 下位の往復でも取りこぼさない） --- *
+     * 最上位へ戻るときは React が左ペインの DOM を先に外すため、
+     * destroy 時点で upperHost は document から切り離されている。
+     * LogicFlow.destroy() は preact の render(null, container) と
+     * ResizeObserver.disconnect() しかしないので、切り離し後でも安全に走る。
+     * ただし destroy が中身を消すので、ゴースト用の innerHTML は必ず destroy の前に取る。 */
+    return () => {
+      // 組み立ての途中なら、この世代はもう描かない（await の後で弾かれる）
+      genRef.current += 1
+      for (const d of disposers) d()
+      if (!rendered) return
+      splitGhostRef.current = animate
+        ? { upper: upperHost?.innerHTML ?? null, lower: lowerHost.innerHTML }
+        : null
+      upperLf?.destroy()
+      lowerLf?.destroy()
+      upperLf = null
+      lowerLf = null
+      splitLfRef.current = null
+      if (upperHost !== null) upperHost.innerHTML = ''
+      lowerHost.innerHTML = ''
     }
   }, [doc, flat, direction, drillRoot, viewMode, prevDrillRoot, animate, nestPath])
 }

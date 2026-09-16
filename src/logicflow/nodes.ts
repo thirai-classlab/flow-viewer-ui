@@ -424,13 +424,15 @@ export function edgeStyleOf(kind: LinkKind) {
 }
 
 /**
- * レイアウト（dagre）が決めた配線を LogicFlow のエッジ設定に写す。
+ * レイアウト（ELK）が決めた配線を LogicFlow のエッジ設定に写す。
  *
  * PolylineEdgeModel は pointsList を orthogonalizePath で直交化してそのまま採用し、
  * startPoint / endPoint を渡せば setAnchors() が端点を上書きしない（BaseEdgeModel.js）。
  * text に x / y を入れると formatText() がラベル位置として使う。
- * route が無いエッジ（コンテキスト層をまたぐ線、nested の中身どうしの線）は
- * 従来どおり LogicFlow の自動経路（最長セグメント中点にラベル）にフォールバックする。
+ * route が無いエッジ（ELK が座標を返せなかったもの）は LogicFlow の自動経路
+ * （最長セグメント中点にラベル）にフォールバックする。#19 の後始末で
+ * コンテキスト層をまたぐ線も畳んだグループをまたぐ線も ELK を通るようになったので、
+ * ここへ落ちる辺は tests/layout.sweep.test.ts が 0 本であることを見ている。
  */
 export function edgeRouteConfig(
   route: EdgeRoute | undefined,

@@ -16,7 +16,7 @@ import {
   SELECT_COLOR,
   SPLIT,
 } from '../flow/theme'
-import type { Placed, Point } from './layout'
+import type { Bounds, Placed, Point } from './layout'
 import { BADGE_CLASS, BADGE_PART_CLASS, CONTEXT_CLASS, DOC_CLASS, DRILL_CLASS, SELECT_CLASS } from './nodes'
 
 /** 視野合わせの余白。旧値 72 は 820x544 のキャンバスの 13% を捨てていた */
@@ -233,6 +233,43 @@ export function fitScale(
   return Math.min(maxScale, (cw - pad) / Math.max(w, 1), (ch - pad) / Math.max(h, 1))
 }
 
+export type FitOptions = {
+  pad?: number
+  maxScale?: number
+  minScale?: number
+  /**
+   * 視野合わせの基準にする「ノード実体だけ」の外接矩形（配線とラベルを含めない）。
+   * 省略時は描画結果そのもの（0,0,w,h）。
+   */
+  nodes?: Bounds
+  /** 収まらない軸で必ず可視域に入れる箱（主軸の先頭ノード）。省略時は nodes と同じ */
+  anchor?: Bounds
+}
+
+/**
+ * 1 軸ぶんの平行移動量。
+ *   収まる  … ノード枠を中央へ
+ *   収まらない … 従来どおりノード枠の開始側を pad/2 へ。
+ *               それで先頭ノードが可視域に収まらないときだけ、収まるところまで最小限ずらす。
+ */
+function offsetOf(
+  box: { start: number; size: number },
+  anchor: { start: number; size: number },
+  canvas: number,
+  pad: number,
+  scale: number,
+): number {
+  // 0.5px は浮動小数の丸め。下限を使わなかったときは必ずこちら（中央）になる
+  if (box.size * scale <= canvas - pad + 0.5) return (canvas - box.size * scale) / 2 - box.start * scale
+  const head = pad / 2 - box.start * scale
+  // 先頭ノードが可視域（両端 pad/2 の内側）に収まる平行移動量の範囲 [lo, hi]
+  const lo = pad / 2 - anchor.start * scale
+  const hi = canvas - pad / 2 - (anchor.start + anchor.size) * scale
+  // 先頭ノードが可視域より大きいなら開始側を優先する（先頭の頭が見えるほうが手がかりになる）
+  if (lo > hi) return lo
+  return Math.min(hi, Math.max(lo, head))
+}
+
 /**
  * 描画結果 w×h をキャンバス cw×ch に収める。
  *
@@ -245,24 +282,28 @@ export function fitScale(
  * 止めた結果はみ出す軸は開始側（左 / 上）に pad/2 で寄せ、収まる軸は従来どおり中央。
  * はみ出したぶんはホイール / ドラッグのパンに任せる。
  * 「全体を表示」と split の左ペインは minScale に FIT.minScale を渡して下限を外す。
+ *
+ * 基準（#19 レビュー HIGH 1）: opts.nodes が来たらノード実体の外接矩形で合わせる。
+ * 配線とラベルまで含めた w×h で寄せると、両軸ともはみ出す絵（多グループ 60 × 縦）で
+ * 可視域にノードが 1 つも入らないことがある（実測: .lf-node 63 個中 0 個）。
  */
 export function fitViewport(
   w: number,
   h: number,
   cw: number,
   ch: number,
-  pad = FIT_PADDING,
-  maxScale = FIT.maxScale,
-  minScale: number = FIT.minReadable,
+  opts: FitOptions = {},
 ): Viewport {
-  const scale = clampScale(Math.max(minScale, fitScale(w, h, cw, ch, pad, maxScale)))
-  // 0.5px は浮動小数の丸め。下限を使わなかったときは両軸とも必ずこちら（中央）になる
-  const fitsW = w * scale <= cw - pad + 0.5
-  const fitsH = h * scale <= ch - pad + 0.5
+  const pad = opts.pad ?? FIT_PADDING
+  const maxScale = opts.maxScale ?? FIT.maxScale
+  const minScale = opts.minScale ?? FIT.minReadable
+  const nodes = opts.nodes ?? { x: 0, y: 0, w, h }
+  const anchor = opts.anchor ?? nodes
+  const scale = clampScale(Math.max(minScale, fitScale(nodes.w, nodes.h, cw, ch, pad, maxScale)))
   return {
     scale,
-    tx: fitsW ? (cw - w * scale) / 2 : pad / 2,
-    ty: fitsH ? (ch - h * scale) / 2 : pad / 2,
+    tx: offsetOf({ start: nodes.x, size: nodes.w }, { start: anchor.x, size: anchor.w }, cw, pad, scale),
+    ty: offsetOf({ start: nodes.y, size: nodes.h }, { start: anchor.y, size: anchor.h }, ch, pad, scale),
   }
 }
 
@@ -362,7 +403,7 @@ type PolylineLike = {
 }
 
 /**
- * レイアウト（dagre）が決めた配線を、描画直後のモデルから控えておく。
+ * レイアウト（ELK）が決めた配線を、描画直後のモデルから控えておく。
  * moveNode2Coordinate() → moveStartPoint / moveEndPoint は updatePoints() で
  * 自動経路に計算し直すので（PolylineEdgeModel.js）、トゥイーン中は pointsList が消える。
  */

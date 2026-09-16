@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="581" height="1194" viewBox="0 0 581 1194" font-family="Hiragino Sans, Noto Sans JP, sans-serif">
+<rect width="581" height="1194" fill="#fbfbfa"/>
+<text x="40" y="26" font-size="16" fill="#222">split-nest-deep[ports+group] / elk — ports(グループにも付与) + MODEL_ORDER + INCLUDE_CHILDREN</text>
+<defs>
+<marker id="ah-normal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3b6ea8"/></marker>
+<marker id="ah-exception" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c2543b"/></marker>
+<marker id="ah-loopback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9a6fb0"/></marker>
+</defs>
+<rect x="121" y="144" width="339" height="690" rx="8" fill="#eef1f5" stroke="#9aa7b5" stroke-width="1.2"/>
+<text x="129" y="159" font-size="11" fill="#556">受注プロセス</text>
+<rect x="155" y="293" width="257" height="488" rx="8" fill="#eef1f5" stroke="#9aa7b5" stroke-width="1.2"/>
+<text x="163" y="308" font-size="11" fill="#556">受付部門</text>
+<rect x="219" y="452" width="176" height="296" rx="8" fill="#eef1f5" stroke="#9aa7b5" stroke-width="1.2"/>
+<text x="227" y="467" font-size="11" fill="#556">申込受付</text>
+<polyline points="116.0,121.0 116.0,263.0 150.0,263.0 150.0,412.0 167.0,412.0 167.0,441.0 214.0,441.0 214.0,474.0 307.0,474.0 307.0,494.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="209.0,234.0 209.0,244.0 427.0,244.0 427.0,263.0 465.0,263.0 335.0,907.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="335.0,955.0 335.0,1011.0 465.0,1011.0 465.0,1027.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="465.0,1075.0 465.0,1107.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="307.0,610.0 307.0,620.0 309.0,620.0 309.0,639.0 400.0,639.0 400.0,769.0 417.0,769.0 417.0,802.0 465.0,802.0 465.0,866.0 465.0,986.0 465.0,1027.0" fill="none" stroke="#c2543b" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ah-exception)"/>
+<polyline points="209.0,234.0 209.0,244.0 427.0,244.0 427.0,263.0 465.0,263.0 76.0,891.0 151.0,891.0 151.0,907.0" fill="none" stroke="#c2543b" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ah-exception)"/>
+<polyline points="263.0,383.0 263.0,412.0 417.0,412.0 417.0,282.0 427.0,282.0 427.0,812.0 465.0,812.0 151.0,907.0" fill="none" stroke="#c2543b" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ah-exception)"/>
+<polyline points="465.0,1075.0 465.0,1091.0 243.0,1091.0 243.0,1051.0 243.0,931.0 243.0,891.0 335.0,891.0 335.0,907.0" fill="none" stroke="#9a6fb0" stroke-width="1.6" stroke-dasharray="3 3" marker-end="url(#ah-loopback)"/>
+<polyline points="263.0,383.0 263.0,412.0 417.0,412.0 417.0,176.0 209.0,176.0 209.0,186.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="209.0,234.0 209.0,282.0 150.0,282.0 150.0,315.0 263.0,315.0 263.0,335.0" fill="none" stroke="#9a6fb0" stroke-width="1.6" stroke-dasharray="3 3" marker-end="url(#ah-loopback)"/>
+<polyline points="307.0,716.0 307.0,736.0 400.0,736.0 400.0,431.0 177.0,431.0 177.0,325.0 263.0,325.0 263.0,335.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="263.0,383.0 263.0,393.0 214.0,393.0 214.0,474.0 307.0,474.0 307.0,494.0" fill="none" stroke="#9a6fb0" stroke-width="1.6" stroke-dasharray="3 3" marker-end="url(#ah-loopback)"/>
+<polyline points="307.0,542.0 307.0,562.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="307.0,610.0 307.0,668.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<rect x="40" y="74" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="116" y="101" font-size="12" fill="#222" text-anchor="middle">申込発生</text>
+<rect x="231" y="495" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="307" y="522" font-size="12" fill="#222" text-anchor="middle">フォーム処理</text>
+<rect x="231" y="563" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="307" y="590" font-size="12" fill="#222" text-anchor="middle">重複判定</text>
+<rect x="231" y="669" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="307" y="696" font-size="12" fill="#222" text-anchor="middle">顧客登録</text>
+<rect x="187" y="336" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="263" y="363" font-size="12" fill="#222" text-anchor="middle">内容確認</text>
+<rect x="133" y="187" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="209" y="214" font-size="12" fill="#222" text-anchor="middle">審査部門</text>
+<rect x="259" y="908" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="335" y="935" font-size="12" fill="#222" text-anchor="middle">手配プロセス</text>
+<rect x="389" y="1028" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="465" y="1055" font-size="12" fill="#222" text-anchor="middle">完了プロセス</text>
+<rect x="389" y="1108" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="465" y="1135" font-size="12" fill="#222" text-anchor="middle">完了</text>
+<rect x="75" y="908" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="151" y="935" font-size="12" fill="#222" text-anchor="middle">謝絶</text>
+<rect x="290" y="857" width="39" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="309.5" y="870" font-size="11" fill="#444" text-anchor="middle">4 件</text>
+<rect x="301" y="977" width="28" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="315" y="990" font-size="11" fill="#444" text-anchor="middle">OK</text>
+<rect x="425" y="922" width="34" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="442" y="935" font-size="11" fill="#444" text-anchor="middle">重複</text>
+<rect x="42" y="857" width="28" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="56" y="870" font-size="11" fill="#444" text-anchor="middle">NG</text>
+<rect x="89" y="857" width="56" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="117" y="870" font-size="11" fill="#444" text-anchor="middle">確認不可</text>
+<rect x="170" y="977" width="67" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="203.5" y="990" font-size="11" fill="#444" text-anchor="middle">未開通あり</text>
+<rect x="420" y="201" width="28" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="434" y="214" font-size="11" fill="#444" text-anchor="middle">OK</text>
+<rect x="151" y="254" width="56" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="179" y="267" font-size="11" fill="#444" text-anchor="middle">不備あり</text>
+<rect x="217" y="403" width="45" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="239.5" y="416" font-size="11" fill="#444" text-anchor="middle">再入力</text>
+<rect x="271" y="630" width="34" height="18" rx="3" fill="#ffffff" fill-opacity="0.92" stroke="#c8cdd4" stroke-width="0.8"/>
+<text x="288" y="643" font-size="11" fill="#444" text-anchor="middle">新規</text>
+</svg>

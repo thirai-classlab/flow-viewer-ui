@@ -26,7 +26,7 @@
 | グループ（入れ子） | 公式プラグイン（`plugin`） |
 | 折りたたみ | 公式プラグイン（`plugin`） |
 | ドリルダウン | 自前実装（`diy`） |
-| 自動レイアウト | `@dagrejs/dagre` 3.1.1（ランク付け・交差最小化・座標・配線）+ 自前の箱詰め（入れ子コンテナ）。#13 で自前実装から置換 |
+| 自動レイアウト | `elkjs` 0.12（ELK layered。ランク付け・交差最小化・座標・直交配線・入れ子）。#13 で自前実装 → dagre、#19 で dagre → ELK。ライセンスは **EPL-2.0 OR GPL-3.0-or-later** |
 
 ## 実装して分かったこと（findings）
 
@@ -188,11 +188,17 @@ direction=RIGHT のまま並べると横 1360 × 縦 140 のような極端な�
 
 ### dagre 化で分かったこと（#13）
 
+> **一部失効（2026-09-16, #19）**: 自動レイアウトは `@dagrejs/dagre` から **elkjs 0.12（ELK layered）** に全面置換した。
+> 下の 6 項目のうち、dagre 固有の 2 つ（`minlen` の 2 倍・`orthogonalRoute()` による直交化）と
+> 「配線が取れるのは同じ箱の直下どうしだけ」は失効している。`LineText` の背景幅と `tweenLayout()` の
+> `updatePath()` 戻しは ELK でもそのまま必要。詳しくは下の「ELK 化で分かったこと（#19）」。
+
+
 - dagre は `minlen` を内部で 2 倍にしてラベル用の仮想ノードを必ず 1 つ挟むので、隣接ノード間でも `edge.x / y`（ラベル中心）が取れる。ラベルに `width / height` を渡すと逆走辺（loopback）と順路が別トラックに分かれ、隣の枠にラベルが重ならない
 - dagre の `points` は両端が枠との交点で中間が仮想ノードを結ぶ斜線。そのまま `pointsList` に渡すと LogicFlow の `orthogonalizePath` が枠の縁を這う線を作るので、`layout.ts` の `orthogonalRoute()` が「側面の通過点に一番近い位置から出て、空き区間の中央で 1 回だけ曲がる」直交折れ線に組み直している。菱形（decision）は頂点だけが枠線に触れるので側面中央に固定
 - `LineText` は線上ラベルの背景を文字数にかかわらず `edgeText.textWidth`（90px）幅で描く。短いラベルでも 90px の背景が線を隠すので、`lfa-polyline`（`AppPolylineEdgeModel`）を登録して `properties.textStyle.textWidth` をラベルの実幅にしている。`BaseEdgeModel.getTextStyle()` はテーマしか見ないので override が要る
 - `moveNode2Coordinate()` → `moveStartPoint / moveEndPoint` は `updatePoints()` で自動経路に計算し直すため、位置トゥイーン中は `pointsList` が消える。`tweenLayout()` が描画直後の `pointsList` と `text` 位置を控え、完了時に `updatePath()` と `moveText()` で戻す
-- 配線が取れるのは「同じ箱の直下どうし」を結ぶ線だけ。箱をまたぐ線（nested の中身どうし、split 左ペインの入れ子に刺さる線、コンテキスト層への crossing）は従来どおり LogicFlow の自動経路（障害物回避なし・最長セグメント中点にラベル）に落ちる
+- ~~配線が取れるのは「同じ箱の直下どうし」を結ぶ線だけ~~ **失効（2026-09-16, #19 の後始末）**: 箱をまたぐ線も ELK を通る。nested の中身どうしと split 左ペインの入れ子は `INCLUDE_CHILDREN`、折りたたみ中のグループをまたぐ線は `Arranged.projected`、コンテキスト層への crossing は「コンテキスト層も ELK の入力に含める」で解決した。LogicFlow の自動経路に落ちる辺は 0 本（`tests/layout.sweep.test.ts` が assert する）
 - 848 通り（32 ケース × 全ドリル経路 × RIGHT/DOWN）の回帰は `npm test`（`tests/layout.sweep.test.ts`）で走る: 例外 0 / NaN 0 / 重なり 0 / 後退辺 0 / 直交・両端が枠線上・ラベルが線上
 
 ### 拡大上限は「ラベルの実効フォントサイズ」で決めると迷わない
@@ -248,3 +254,152 @@ preact の再描画は非同期なので、`transform` 属性の読み取りは�
 nested の箱は dynamic-group プラグインが登録したままの型なので `getOuterGAttributes()` を差し替えられない
 （`type: 'dynamic-group'` を再登録するとプラグイン側の実装ごと置き換わり、折りたたみの検証結果を壊す）。
 nested には枠左上の ± という既存のアフォーダンスがあるのでそのままにした。
+
+## ELK 化で分かったこと（#19、2026-09-16）
+
+### 効いたオプションだけを残す — ELK は不正なオプション名・値を例外なく黙って無視する
+
+これが一番の落とし穴。綴りが 1 文字違っても、値が列挙外でも、ELK は例外を投げず**そのオプションを無かったことにする**。
+「設定したのに効かない」と「設定が間違っている」が区別できないので、足したら必ず出力の数値（bbox・端点・交差数）で確かめる。
+実測で黙って無視されたもの: `elk.layered.spacing.baseValue`（4 / 8 / 12 いずれも bbox 303x853 のまま）、
+`elk.edgeLabels.inline=true`（361x920 のまま）、`elk.layered.compaction.postCompaction.strategy=EDGE_LENGTH`（361x920 のまま）。
+無視ではなく**壊れる**ものも 2 つあった: `elk.layered.layering.strategy=STRETCH_WIDTH` は 300 秒待っても返らず（プロセスごと kill）、
+`DF_MODEL_ORDER` は `java.lang.IndexOutOfBoundsException: index (-1) must not be negative`。本体でこの 2 つを露出してはいけない。
+
+平坦な階層（drilldown / nested）で採った最終セット（`layout.ts` の `elkLayoutOptions()`）:
+`elk.algorithm=layered` / `elk.direction=DOWN|RIGHT` / `elk.edgeRouting=ORTHOGONAL` / `elk.hierarchyHandling=INCLUDE_CHILDREN` /
+`nodePlacement.strategy=BRANDES_KOEPF` / `crossingMinimization.strategy=LAYER_SWEEP`（+ `forceNodeModelOrder=false`）/
+`thoroughness=14` / **`cycleBreaking.strategy=MODEL_ORDER`**（既定の GREEDY は順路を無視して逆走辺を作る）/
+`considerModelOrder.strategy=NODES_AND_EDGES` / `mergeEdges=false` / `unnecessaryBendpoints=true` /
+`spacing.nodeNode` と `layered.spacing.nodeNodeBetweenLayers` に `LAYOUT_GAP` / `spacing.edgeNode=16` / `spacing.edgeEdge=12` /
+`spacing.edgeLabel=6` / `spacing.labelNode=8` / `edgeLabels.placement=CENTER` / `layered.edgeLabels.sideSelection=ALWAYS_DOWN` /
+root は `elk.padding=[0,0,0,0]`、グループ（compound node）は `elk.padding=[top=GROUP_HEADER,…]` + `elk.nodeSize.constraints=MINIMUM_SIZE`。
+
+`INCLUDE_CHILDREN` で `crossingMinimization.strategy` を変えるときは、root だけでなく compound node にも同じ値を置かないと
+`UnsupportedGraphException: The hierarchy aware processor LAYER_SWEEP in child node ... is only allowed if the root node specifies the same hierarchical processor` で落ちる（実測）。
+
+### ポート規則: 「上から入って下から出る」は辺ごとの FIXED_POS ポートでしか作れない
+
+ユーザー指摘の 3 点（上辺に入る線は中央 / 出る線は下辺・横 / 線とラベルが重ならない）のうち、前 2 つはポートで解く。
+
+- **葉ノードだけ**にポートを付ける（グループは FREE。付けると入れ子で斜め線が出る）
+- **辺ごとに専用ポートを 1 つ**作り `elk.portConstraints=FIXED_POS`
+- 入口は `NORTH`(DOWN) / `WEST`(RIGHT)、出口は `SOUTH`(DOWN) / `EAST`(RIGHT)
+- 位置は辺の中央 ±(span×0.15)、刻みは `min(16, span×0.3/(k-1))`（`spreadOffsets()`）
+
+ポートを外すと 848 通りで 出口 1.000 → 0.948 / 上辺中央 0.985 → 0.767 に落ちる（`layout.ts` の `portsOf()` を空配列にして実測）。
+逆に「辺の中央 1 点に全部集約」すると交差は 708 → 227 まで減るが、共線重なりが 0 → 3,915 に激増して 3 本の線が 1 本に見える。
+
+### ひし形の端点は「ポートで外周に乗せる」ことが原理的にできない — 読み取り側で伸ばす
+
+ELK は `elk.port.side` を付けたポートの**主軸座標を bbox の枠線へ強制スナップする**（実測: SOUTH ポートに y=84.64 を指定 → 実測 y=92、
+NORTH ポートに y=0 を指定 → 実測 y=-1）。つまりひし形（decision）は頂点以外が bbox の辺に触れないので、
+散らしたポートの端点はそのまま使うと**図形の外に浮く**（#18 の実装では菱形端点 1,418 本中 432 本 = 30.5%）。
+
+解決は読み取り側。`snapDiamondEndpoints()` が最終セグメントの向き（主軸に平行）を保ったまま端点を 4 頂点の外周まで伸ばす。
+直交は崩れず、848 通りで 外周外 0 / 非直交 0 / 逆走 0。
+ここで要るのが `DIAMOND_MAX_INSET.flat = 12`（ひし形だけポートを散らす幅を絞る上限）。これが無いと食い込みが最大 31.1px になり、
+最終セグメント（最短 17px = `elk.spacing.edgeNode` 16 由来）を食い切って折れ線が逆走する。上限つきなら最大食い込み 13.1px / 最小余裕 3.9px。
+
+**入れ子（split 左ペイン）は別値 `DIAMOND_MAX_INSET.nest = 3`**（#19 の後始末）。左ペインは層の間隔が `rankNode = 4px` しかなく、
+最終セグメントも 4px 前後になるので、12 のままだと「最終セグメントより食い込まない」保険が先に働いて端点が外周の手前で止まる
+（実測: 全ドリル地点 434 のひし形端点 136 本のうち 93 本が外周外・最大 7.7px）。3 にすると 0 本になる。
+なお左ペインは `buildSpec()` が形を `rect` 決め打ちにしていたので、そもそも `snapDiamondEndpoints()` が呼ばれていなかった
+（`toSplitUpperNode()` はひし形で描くのに）。サイズが一律でも `shape` だけは kind から決めること。
+
+なお「ひし形は頂点 1 点に集める」案も外周外 0 にはなるが、共線重なりが 0 → 240 に増えて 3 本の入線が 1 本に重なって見えたので採らなかった。
+
+### ラベルは ELK に場所を空けさせる。split 左ペインは「縮尺が頭打ちなら」渡す
+
+`labelSizeOf()` の矩形を `edge.labels` に渡すと、`edgeLabels.placement=CENTER` + `sideSelection=ALWAYS_DOWN` で
+ラベルが線の脇に置かれる。848 通りで「ラベルが自分の線に重なる」が dagre 1,046/1,110（94.2%）→ ELK 0/1,110 になった。
+逆にラベルの予約矩形を 1x1 に縮めると 1,110/1,110 が線に重なる（テストを壊して確認済み）。
+
+split の左ペイン（幅 36〜52% の柱）は既定では渡さない。渡すと縦に伸びて縮尺が 0.85 → 0.78 に落ちる
+（dagre と同じ 5 本だけに絞っても 0.78）。全ドリル地点 × 4 解像度 1,736 点で測ると、無条件に渡した場合
+0.85 未満が 736 → 1,144 点に増える。
+
+**ただし縮尺が `FIT.maxScaleUpper = 1.0` で頭打ちの地点では渡しても損しない**（#19 の後始末）。
+`buildSplitNestGraph(view, …, fit)` にペイン実寸を渡すと、まずラベル無しで組み、その縮尺が頭打ちのときだけ
+ラベル付きでもう一度組んで「頭打ちのままなら採る」。採否を縮尺で決めるので 0.85 未満の地点数は 736 のまま変わらず
+（実測: 修正前 736 / 修正後 736）、1440x900 では 434 地点中 115 地点で ELK がラベルを置く。
+採らなかった地点のラベルは従来どおり LogicFlow の自動配置。
+
+### 入れ子の読み順は `considerModelOrder` では一切動かない — `partitioning` と loopback 反転で解く
+
+split 左ペイン（経路入れ子）を ELK にすると、既定では読み順が JSON 順から崩れる（兄弟ペアの前後関係 15/20）。
+`considerModelOrder.strategy` 3 種 × `forceNodeModelOrder` 2 値、`noModelOrder` 4 種、`cycleBreaking` 4 種、
+`crossingMinimization` 3 種、children 配列を links 順に並べ替え — **全部 15/20 のまま**（GREEDY と DEPTH_FIRST は 13/20 に悪化）。
+
+効いたのは「入力の作り方」側の 2 つだけ:
+
+1. `elk.partitioning.activate=true` + 各ノードに `elk.partitioning.partition` = 親の children 配列内の順番（18/20）
+2. `kind==='loopback'` の辺を向きを入れ替えて ELK に渡し、返ってきた折れ線を `reverse()` して読む（19/20）
+
+両方足して 20/20（dagre は 17/20）。隣接ペアも 9/9（dagre 8/9）。
+**loopback 反転は入れ子だけに当てる**。平坦な 848 通りに当てると「出口は必ず下辺」が 1.000 → 0.951（252 本が入口側から出る）に崩れる。
+入れ子でも逆走辺 3 本は上辺から出るが、左ペイン限定の妥協として受け入れた。
+
+### 箱をまたぐ線は `INCLUDE_CHILDREN` で葉まで届く
+
+dagre は「同じ箱の直下どうし」しか配線を返せず、split 左ペインの 14 本のうち 9 本（箱をまたぐ線）が
+LogicFlow の自動経路に落ちていた。ELK は `hierarchyHandling=INCLUDE_CHILDREN` で親子をまたいで直交配線するので、
+14 本すべてが ELK 配線になり、箱をまたぐ 9 本も 9/9 直交で葉まで届く。
+辺は 2 端点の最小共通祖先（LCA）を `container` にして宣言し、読み取り時にそのコンテナの絶対原点を足す。
+
+`SEPARATE_CHILDREN` + 辺を兄弟レベルへ射影（dagre の `projectLinks` と同じモデル）でも読み順 20/20 にはなるが、
+線が箱の枠で止まって葉に届かないので不採用。
+
+### 折りたたみ中のグループをまたぐ線も ELK に通す（#19 の後始末）
+
+`resolveLinks()` は畳んだグループへ射影した辺も ELK に渡している（同じ端点の組は 1 本に畳む）が、
+以前はその配線を捨てていた。捨てると LogicFlow の仮想エッジ（`createVirtualEdge` が `pointsList = undefined` で作る）と
+自前の補修エッジが自動経路になり、**畳んだ箱を線が貫通する**。
+実測（34 ドキュメントの nested 初期表示 = 自動抽象化後）: 畳んだ箱をまたぐ 964 本のうち 841 本が自動経路 → 0 本。
+`Arranged.projected`（key は `<始点>-><終点>`）で返し、`use-drill-effect.ts` が補修エッジには `addEdge` の時点で、
+LogicFlow が作った仮想エッジには `updatePath()` で当てる。重複する仮想エッジには同じ折れ線を当てるので重なって 1 本に見える。
+
+### フォーカス + コンテキストもコンテキスト層ごと ELK に入れる（#19 の後始末）
+
+コンテキスト層を 3 バンドに手置きして crossing エッジを LogicFlow の自動経路に任せていたが、
+線がフォーカス層の箱を貫通し、ラベルが箱の下に隠れ、3 本が同じ y に重なって 1 本に見えていた。
+コンテキスト層も `arrange()` の入力に入れ、バンド構成は `elk.partitioning`（前 0 / フォーカス 1 / 後 2）で保つ。
+サイズは `LayoutCtx.sizeOf` で `CONTEXT_SIZE` に上書きする。
+実測（868 画面 = 全ドリル地点 × 2 方向）: crossing 3,052 本すべてが ELK 配線になり、
+箱の貫通 0 / ラベル × ノードの重なり 0 / ラベルが自分の線に重なる 0。
+同じ partition のノードは従来どおり ELK が層を決めるので、フォーカス層の層数が減った画面は 868 中 2 画面だけだった。
+
+### 折りたたみ中のグループだけは ELK の compound にしない
+
+nested の折りたたみは「場所取りを `COLLAPSED_SIZE` にする」ことが目的なので、compound node（= ELK が中身に合わせて大きくする）
+にしてしまうと畳む意味が消える。折りたたみ中のグループは **親のグラフでは `COLLAPSED_SIZE` の葉**として置き、
+展開時のレイアウトだけ別の `arrange()`（= 別の ELK 実行）で先に決めて `Box.fullW/fullH` に入れる。
+LogicFlow の `collapse()` は「左上を固定して縮む」実装なので、展開時の箱の左上を枠の左上に合わせておけば畳んだ結果がぴったり収まる。
+
+### 層番号（`Arranged.ranks`）は ELK の出力から復元している
+
+ELK は層番号を JSON に載せない。ただし ELK layered は**同じ層のノードを主軸の開始座標で揃える**（実測: 幅 200 と 60 のノードが
+同じ層なら y が両方 82）ので、トップレベルの箱の主軸開始座標をまとめて番号にすれば層番号になる。
+`tests/layout.sweep.test.ts` の「後退辺 0」はこの復元値を使うので、dagre 時代より弱い検査になっている点は承知しておくこと。
+
+### 非同期化: effect は「await を含む組み立て」と「await を含まない描画」に割る
+
+`arrange()` が `Promise` を返すようになったので、描画 effect の中で await をまたぐと
+cleanup（同期クロージャ）との間で ref の書き込み順が壊れる。`use-drill-effect.ts` / `use-split-effect.ts` は
+
+1. **組み立て**（await あり）: レイアウトとグラフ config を作るだけ。DOM も ref も触らない
+2. `if (gen !== genRef.current) return`（世代カウンタ）
+3. **描画**（await 無し）: ghost → `createLogicFlow` → `render` → 視野合わせ → tween → イベント購読
+
+の 3 段にしてある。(3) は同期なので React が途中で cleanup を走らせられず、
+`prevViewportRef` / `prevLayoutRef` / `splitViewportRef` / `lastRootRef` / `ghostRef` の書き込み順と `dead.destroy()` の順序が守られる。
+cleanup は `rendered` フラグを見て、描画まで到達していない世代では ghost も host も触らない（触ると次の描画のゴーストが空になる）。
+
+### バンドル: Worker に逃がすと本体は +4.8KB で済む
+
+`elk.bundled.js` は 1,441,200B（gzip 438KB）。`elkjs/lib/elk-api.js`（4,764B / gzip 1.9KB）+
+`new Worker(new URL('elkjs/lib/elk-worker.min.js', import.meta.url), { type: 'module' })` にすると、
+Vite が worker を別アセット（1,433,769B）として吐き、本体チャンクには入らない（実測 `dist/assets`）。
+`typeof Worker === 'function'` が false の環境（vitest の node）と、Worker の生成が例外になる環境（CSP）では
+`elk.bundled.js` の動的 import に落ちる。ELK インスタンスはモジュールスコープの lazy singleton 1 つを使い回す
+（`elk-api.js` の `PromisedWorker` はメッセージ id で解決するので、同時に複数の `layout()` を投げても取り違えない）。

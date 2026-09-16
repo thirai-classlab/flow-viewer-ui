@@ -48,10 +48,34 @@ describe('fitViewport の下限（FIT.minReadable）', () => {
   })
 
   it('minScale に FIT.minScale を渡すと下限なし（全体を表示）: 生の縮尺で中央寄せ', () => {
-    const vp = fitViewport(2800, 300, CW, CH, PAD, FIT.maxScale, FIT.minScale)
+    const vp = fitViewport(2800, 300, CW, CH, { minScale: FIT.minScale })
     expect(vp.scale).toBeCloseTo((CW - PAD) / 2800, 6)
     expect(vp.tx).toBeCloseTo((CW - 2800 * vp.scale) / 2, 6)
     expect(vp.ty).toBeCloseTo((CH - 300 * vp.scale) / 2, 6)
+  })
+
+  it('はみ出す軸でも先頭ノードが可視域に入る（#19 レビュー HIGH 1）', () => {
+    // 多グループ 60 × 縦の縮図: 両軸ともはみ出し、先頭ノードは右のほうに居る
+    const nodes = { x: 0, y: 0, w: 2400, h: 12000 }
+    const anchor = { x: 1800, y: 20, w: 268, h: 108 }
+    const vp = fitViewport(2400, 12000, CW, CH, { nodes, anchor })
+    expect(vp.scale).toBe(FIT.minReadable)
+    // 基準を配線込みの矩形にしていた頃は tx = pad/2 で、先頭ノードは x ≒ 1558 と画面外だった
+    const left = anchor.x * vp.scale + vp.tx
+    const right = (anchor.x + anchor.w) * vp.scale + vp.tx
+    const top = anchor.y * vp.scale + vp.ty
+    const bottom = (anchor.y + anchor.h) * vp.scale + vp.ty
+    expect(left).toBeGreaterThanOrEqual(0)
+    expect(right).toBeLessThanOrEqual(CW)
+    expect(top).toBeGreaterThanOrEqual(0)
+    expect(bottom).toBeLessThanOrEqual(CH)
+  })
+
+  it('先頭ノードが元から可視域にあるなら従来どおり開始側 pad/2（余計に動かさない）', () => {
+    const nodes = { x: 0, y: 0, w: 2800, h: 300 }
+    const anchor = { x: 0, y: 100, w: 212, h: 78 }
+    const vp = fitViewport(2800, 300, CW, CH, { nodes, anchor })
+    expect(vp.tx).toBe(PAD / 2)
   })
 
   it('fitScale は上限だけ効いた生の縮尺を返す（nested の自動抽象化の判定に使う）', () => {

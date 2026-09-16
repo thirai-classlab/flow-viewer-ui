@@ -10,7 +10,8 @@ import type { NestNode, PathNestView, SplitView } from '../flow/collapse'
 import { descendantCount, edgesForNestView } from '../flow/collapse'
 import type { Direction, FlowLink } from '../flow/schema'
 import { SPLIT } from '../flow/theme'
-import type { LayoutCtx, Placed } from './layout'
+import { fitScale } from './anim'
+import type { Bounds, LayoutCtx, Placed } from './layout'
 import { EMPTY_COLLAPSE, arrange, edgeKeysOf, emitArranged, routeOf } from './layout'
 import type { LFEdgeConfig, LFNodeConfig, UpperState } from './nodes'
 import {
@@ -27,7 +28,7 @@ import {
  *
  * 左 = 1 つ上の階層（current とその兄弟）／右 = current の中身。
  * どちらも完全にフラットなグラフなので dynamic-group は一切使わず、
- * 既存の arrange() を levelOnly で回すだけで済む。
+ * 既存の arrange() を levelOnly で回すだけで済む（#19 から await が要る）。
  *
  * ペインをまたぐ線は引かない（ユーザーの明示的な選択）。代わりに
  *   ★ = view.current      … SPLIT.currentStroke の太枠 + 実色
@@ -48,6 +49,9 @@ export type SplitPaneGraph = {
   width: number
   height: number
   positions: Map<string, Placed>
+  /** 視野合わせの基準（配線とラベルを含まないノード実体の外接矩形）と、主軸の先頭ノード */
+  nodeBox: Bounds
+  headBox: Bounds
 }
 
 export const EMPTY_PANE: SplitPaneGraph = {
@@ -56,6 +60,8 @@ export const EMPTY_PANE: SplitPaneGraph = {
   width: 1,
   height: 1,
   positions: new Map<string, Placed>(),
+  nodeBox: { x: 0, y: 0, w: 1, h: 1 },
+  headBox: { x: 0, y: 0, w: 1, h: 1 },
 }
 
 /**
@@ -66,11 +72,11 @@ export const EMPTY_PANE: SplitPaneGraph = {
  * 横に流すと 6 ノードで横幅が 1000px を超え、視野合わせで 0.2 倍まで
  * 縮んで文字が読めなくなる（実測）。縦積みならペインの高さを使い切れる。
  */
-export function buildSplitUpperGraph(
+export async function buildSplitUpperGraph(
   view: SplitView,
   byId: Map<string, FlatNode>,
   docIds: ReadonlySet<string> = new Set<string>(),
-): SplitPaneGraph {
+): Promise<SplitPaneGraph> {
   if (view.upper.length === 0) return EMPTY_PANE
   const links = view.upperEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind, label: e.label }))
   const ctx: LayoutCtx = {
@@ -81,7 +87,7 @@ export function buildSplitUpperGraph(
     levelOnly: true,
     fixedSize: SPLIT.nodeSize,
   }
-  const arranged = arrange(
+  const arranged = await arrange(
     view.upper.map((n) => n.id),
     ctx,
   )
@@ -106,16 +112,18 @@ export function buildSplitUpperGraph(
     width: arranged.width,
     height: arranged.height,
     positions,
+    nodeBox: emitted.nodeBox,
+    headBox: emitted.headBox,
   }
 }
 
 /** 右ペイン: 今いる階層の中身。従来のドリルダウンと同じ見た目（サイズも据え置き） */
-export function buildSplitLowerGraph(
+export async function buildSplitLowerGraph(
   view: SplitView,
   byId: Map<string, FlatNode>,
   direction: Direction,
   docIds: ReadonlySet<string> = new Set<string>(),
-): SplitPaneGraph {
+): Promise<SplitPaneGraph> {
   if (view.lower.length === 0) return EMPTY_PANE
   const links = view.lowerEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind, label: e.label }))
   const ctx: LayoutCtx = {
@@ -125,7 +133,7 @@ export function buildSplitLowerGraph(
     direction,
     levelOnly: true,
   }
-  const arranged = arrange(
+  const arranged = await arrange(
     view.lower.map((n) => n.id),
     ctx,
   )
@@ -152,6 +160,8 @@ export function buildSplitLowerGraph(
     width: arranged.width,
     height: arranged.height,
     positions,
+    nodeBox: emitted.nodeBox,
+    headBox: emitted.headBox,
   }
 }
 
@@ -192,13 +202,31 @@ export type NestPaneGraph = SplitPaneGraph & {
   outOfScope: number
 }
 
+/**
+ * 左ペインの視野。ラベルの場所を ELK に空けさせてよいかの判定にだけ使う。
+ * 省略すると従来どおり「空けない」（= 縮尺優先）。
+ */
+export type PaneFit = { cw: number; ch: number; pad: number; maxScale: number }
+
+/**
+ * ラベルの場所を空けても縮尺が落ちないか。
+ *
+ * 左ペインの縮尺は FIT.maxScaleUpper = 1.0 で頭打ちになるので、頭打ちしている地点では
+ * 縦に伸びても実際の見た目の縮尺は 1.00 のまま変わらない。そこだけラベルを ELK に渡す。
+ * 頭打ちしていない地点は NOTES.md の実測どおり 0.85 → 0.78 に落ちるので渡さない。
+ */
+function paneScaleOf(arr: { nodeBox: { w: number; h: number } }, fit: PaneFit): number {
+  return fitScale(arr.nodeBox.w, arr.nodeBox.h, fit.cw, fit.ch, fit.pad, fit.maxScale)
+}
+
 /** 左ペイン（経路入れ子）を組み立てる */
-export function buildSplitNestGraph(
+export async function buildSplitNestGraph(
   view: PathNestView,
   byId: Map<string, FlatNode>,
   links: readonly FlowLink[],
   parentOf: Map<string, string>,
-): NestPaneGraph {
+  fit?: PaneFit,
+): Promise<NestPaneGraph> {
   const expanded = new Set<string>()
   let boxDepth = 0
   const scan = (list: readonly NestNode[]) => {
@@ -217,8 +245,8 @@ export function buildSplitNestGraph(
   const { edges: nestEdges, outOfScope } = edgesForNestView(links, parentOf, view)
 
   // 向きは左ペインの慣例どおり常に縦。横に流すと入れ子の幅が柱に収まらない。
-  // 間隔は共通テーマの SPLIT.nestGap（node 14 / rank 22）。本編用の LAYOUT_GAP
-  // （node 28 / rank 64）は幅 36〜52% の柱に入れ子を積むには広すぎて縮尺が潰れる。
+  // 間隔は共通テーマの SPLIT.nestGap。本編用の LAYOUT_GAP（node 30 / rank 64）は
+  // 幅 36〜52% の柱に入れ子を積むには広すぎて縮尺が潰れる（#19 実測: 0.75 → 0.85）。
   // レイアウトへは「左ペインで見えているノードへ寄せた」nestEdges を渡す。
   // 元の links を渡すと、箱の中身どうしの線が射影されて配線が取れない
   const nestLinks = nestEdges.map((e) => ({ from: e.source, to: e.target, kind: e.kind, label: e.label }))
@@ -230,10 +258,14 @@ export function buildSplitNestGraph(
     nestExpanded: expanded,
     gap: SPLIT.nestGap,
   }
-  const arranged = arrange(
-    view.tree.map((n) => n.node.id),
-    ctx,
-  )
+  const topIds = view.tree.map((n) => n.node.id)
+  const plain = await arrange(topIds, ctx)
+  // 縮尺が頭打ちなら、ラベルの場所を空けたほうを採る（見た目の縮尺は変わらず線とラベルが分かれる）
+  let arranged = plain
+  if (fit !== undefined && paneScaleOf(plain, fit) >= fit.maxScale) {
+    const labeled = await arrange(topIds, { ...ctx, nestLabels: true })
+    if (paneScaleOf(labeled, fit) >= paneScaleOf(plain, fit)) arranged = labeled
+  }
   const emitted = emitArranged(arranged, 0, 0)
   const positions: Map<string, Placed> = emitted.positions
   const routeKeys = edgeKeysOf(nestLinks)
@@ -264,6 +296,8 @@ export function buildSplitNestGraph(
     width: arranged.width,
     height: arranged.height,
     positions,
+    nodeBox: emitted.nodeBox,
+    headBox: emitted.headBox,
     levels,
     boxDepth,
     outOfScope: outOfScope.length,

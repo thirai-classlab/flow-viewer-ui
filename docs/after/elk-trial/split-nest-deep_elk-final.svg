@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="362" height="864" viewBox="0 0 362 864" font-family="Hiragino Sans, Noto Sans JP, sans-serif">
+<rect width="362" height="864" fill="#fbfbfa"/>
+<text x="40" y="26" font-size="16" fill="#222">split-nest-deep / elk 最終 — 最終(入れ子): partitioning + loopback 反転 + ラベル無し + 詰めた spacing</text>
+<defs>
+<marker id="ah-normal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3b6ea8"/></marker>
+<marker id="ah-exception" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c2543b"/></marker>
+<marker id="ah-loopback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9a6fb0"/></marker>
+</defs>
+<rect x="75.5" y="136" width="246" height="452" rx="8" fill="#eef1f5" stroke="#9aa7b5" stroke-width="1.2"/>
+<text x="83.5" y="151" font-size="11" fill="#556">受注プロセス</text>
+<rect x="87.5" y="163" width="222" height="340" rx="8" fill="#eef1f5" stroke="#9aa7b5" stroke-width="1.2"/>
+<text x="95.5" y="178" font-size="11" fill="#556">受付部門</text>
+<rect x="99.5" y="190" width="198" height="218" rx="8" fill="#eef1f5" stroke="#9aa7b5" stroke-width="1.2"/>
+<text x="107.5" y="205" font-size="11" fill="#556">申込受付</text>
+<polyline points="204.0,121.0 204.0,131.0 204.0,158.0 204.0,185.0 204.0,212.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="188.0,576.0 188.0,593.0 188.0,597.0 124.5,597.0 124.5,603.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="116.5,651.0 116.5,655.0 100.5,655.0 100.5,662.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="116.5,710.0 116.5,720.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="204.0,328.0 204.0,338.0 273.5,338.0 273.5,413.0 273.5,423.0 108.5,423.0 108.5,508.0 108.5,593.0 108.5,597.0 43.0,597.0 43.0,627.0 43.0,658.0 116.5,658.0 116.5,662.0" fill="none" stroke="#c2543b" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ah-exception)"/>
+<polyline points="204.0,576.0 204.0,593.0 204.0,627.0 204.0,686.0 204.0,743.5 204.0,777.0" fill="none" stroke="#c2543b" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ah-exception)"/>
+<polyline points="212.0,491.0 212.0,508.0 212.0,518.0 281.5,518.0 281.5,593.0 281.5,597.0 220.0,597.0 220.0,627.0 220.0,686.0 220.0,743.5 220.0,777.0" fill="none" stroke="#c2543b" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ah-exception)"/>
+<polyline points="132.5,662.0 132.5,651.0" fill="none" stroke="#9a6fb0" stroke-width="1.6" stroke-dasharray="3 3" marker-end="url(#ah-loopback)"/>
+<polyline points="180.0,491.0 180.0,508.0 180.0,518.0 188.0,518.0 188.0,528.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="204.0,528.0 204.0,518.0 196.0,518.0 196.0,508.0 196.0,491.0" fill="none" stroke="#9a6fb0" stroke-width="1.6" stroke-dasharray="3 3" marker-end="url(#ah-loopback)"/>
+<polyline points="188.0,396.0 188.0,413.0 188.0,443.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="204.0,443.0 204.0,433.0 284.5,433.0 284.5,413.0 284.5,270.0 212.0,270.0 212.0,260.0" fill="none" stroke="#9a6fb0" stroke-width="1.6" stroke-dasharray="3 3" marker-end="url(#ah-loopback)"/>
+<polyline points="196.0,260.0 196.0,280.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<polyline points="188.0,328.0 188.0,348.0" fill="none" stroke="#3b6ea8" stroke-width="1.6" marker-end="url(#ah-normal)"/>
+<rect x="127.5" y="74" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="203.5" y="101" font-size="12" fill="#222" text-anchor="middle">申込発生</text>
+<rect x="127.5" y="213" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="203.5" y="240" font-size="12" fill="#222" text-anchor="middle">フォーム処理</text>
+<rect x="119.5" y="281" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="195.5" y="308" font-size="12" fill="#222" text-anchor="middle">重複判定</text>
+<rect x="111.5" y="349" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="187.5" y="376" font-size="12" fill="#222" text-anchor="middle">顧客登録</text>
+<rect x="119.5" y="444" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="195.5" y="471" font-size="12" fill="#222" text-anchor="middle">内容確認</text>
+<rect x="119.5" y="529" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="195.5" y="556" font-size="12" fill="#222" text-anchor="middle">審査部門</text>
+<rect x="48" y="604" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="124" y="631" font-size="12" fill="#222" text-anchor="middle">手配プロセス</text>
+<rect x="40" y="663" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="116" y="690" font-size="12" fill="#222" text-anchor="middle">完了プロセス</text>
+<rect x="40" y="721" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="116" y="748" font-size="12" fill="#222" text-anchor="middle">完了</text>
+<rect x="135.5" y="778" width="152" height="46" rx="6" fill="#ffffff" stroke="#6b7b8c" stroke-width="1.4"/>
+<text x="211.5" y="805" font-size="12" fill="#222" text-anchor="middle">謝絶</text>
+</svg>
