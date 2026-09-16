@@ -9,3 +9,6 @@
 | P5 | 保留 | 既定の表示モードを nested / split に変える | POC の drilldown + 上位表示を尊重（Q14） | 匿名化実データ（#11）で 3 モードを見比べてから | — |
 | P6 | 保留 | ライセンスの決定（`LICENSE` の設置） | ヒアリングで未回答。`"license": "UNLICENSED"` にしておく | ユーザーが決めたとき | — |
 | P7 | 保留 | GitHub Actions によるタグ起点の npm publish | 手動 publish で足りる（Q25） | ホストが 2 つ以上になる、または版固定の要求が出たとき | — |
+| P8 | 保留 | ノード 0 件のフローを「空状態」として出す | いまは `use-drill-effect.ts` が throw して赤いエラー文字列が出る（`degenerate-empty`）。POC 由来の既存挙動 | #4 の `validateFlowDoc()` を作るとき、境界で弾くか空状態を描くかを決める | — |
+| P9 | 保留 | ノード本文が箱からはみ出す（長大ラベル） | `NODE_SIZE` 固定 + LogicFlow の foreignObject が overflow visible のため。サイズ定数は据え置きの制約がある | 文字側で省略（line-clamp）かツールチップ化を決めたとき | — |
+
